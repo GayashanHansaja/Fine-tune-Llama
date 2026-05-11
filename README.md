@@ -4,11 +4,11 @@ Simple project for fine-tuning a Llama 3.1 model with LoRA on ERP-focused instru
 
 ## Project structure
 
-- `fine_tune_cpu.py` — LoRA fine-tuning script (CPU setup).
-- `evaluate_model.py` — evaluates model outputs and writes CSV metrics.
-- `test_raw.py`, `test_new_model.py` — quick prompt-based smoke tests through Ollama APIs.
-- `ft_data/` — training and evaluation datasets in JSONL format.
-- `Modelfile` — Ollama model configuration and strict ERP system prompt.
+- **`fine_tune_cpu.py`** — LoRA fine-tuning script (CPU setup).
+- **`evaluate_model.py`** — evaluates model outputs and writes CSV metrics.
+- **`test_raw.py`, `test_new_model.py`** — quick prompt-based smoke tests through Ollama APIs.
+- **`ft_data/`** — training and evaluation datasets in JSONL format.
+- **`Modelfile`** — Ollama model configuration and strict ERP system prompt.
 
 ## Requirements
 
@@ -16,8 +16,7 @@ Simple project for fine-tuning a Llama 3.1 model with LoRA on ERP-focused instru
 - Install dependencies:
 
 ```bash
-pip install -r requirements.txt
-pip install pandas rouge-score
+pip install -r requirements.txt pandas rouge-score
 ```
 
 ## Fine-tune
