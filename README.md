@@ -16,7 +16,9 @@ Simple project for fine-tuning a Llama 3.1 model with LoRA on ERP-focused instru
 - Install dependencies:
 
 ```bash
-pip install -r requirements.txt pandas rouge-score
+pip install -r requirements.txt
+# evaluation extras
+pip install pandas rouge-score
 ```
 
 ## Fine-tune
@@ -44,4 +46,4 @@ python test_raw.py
 python test_new_model.py
 ```
 
-These scripts send sample prompts to a local Ollama instance (`http://localhost:11434`).
+These scripts send sample prompts to the default local Ollama endpoint (`http://localhost:11434`), so make sure Ollama is running there before testing.
