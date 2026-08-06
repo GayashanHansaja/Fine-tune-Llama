@@ -3,8 +3,7 @@ from pydantic import BaseModel, Field
 from typing import Any
 import uuid
 
-
-# ─── Core domain objects ──────────────────────────────────────────────────────
+# Core domain objects
 
 class DocumentMeta(BaseModel):
     """Metadata attached to a stored chunk."""
@@ -13,7 +12,7 @@ class DocumentMeta(BaseModel):
     extra: dict[str, Any] = Field(default_factory=dict)
 
 
-# ─── API request / response contracts ────────────────────────────────────────
+# API request / response contracts
 
 class QueryRequest(BaseModel):
     question: str = Field(..., min_length=1, description="The question to answer")

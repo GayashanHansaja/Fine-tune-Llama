@@ -18,13 +18,13 @@ from src.core.policy.policy_ingest import (
 
 POLICY_FILE = os.path.join(
     os.path.dirname(__file__), "..", "src", "data", "documents",
-    "policies", "FIN-2024-011-transfers.md",
+    "policies", "HR-2024-007-salary-adjustments.md",
 )
 
 # Rule 2.4 — a single-paragraph clause longer than CHUNK_SIZE, which is where
 # character-window splitting actually severs a rule from its own exception.
-THRESHOLD = "exceeds 250,000"
-CONSEQUENCE = "single authorization by a compliance officer is sufficient"
+THRESHOLD = "eighteen months"
+CONSEQUENCE = "departmental approval alone is sufficient"
 
 
 def _general_splitter_chunks(body: str) -> list[str]:
@@ -51,11 +51,13 @@ def main() -> None:
     meta, body = parse_front_matter(raw)
     print("=" * 68)
     print("front-matter parsed")
-    print(f"  policy_id        : {meta.policy_id}")
-    print(f"  version          : {meta.version}")
-    print(f"  applies_to_tools : {meta.applies_to_tools}")
-    print(f"  risk_level       : {meta.risk_level.value}")
-    print(f"  mandatory        : {meta.mandatory}")
+    print(f"  policy_id          : {meta.policy_id}")
+    print(f"  version            : {meta.version}")
+    print(f"  doc_type           : {meta.doc_type.value}")
+    print(f"  applies_to_actions : {meta.applies_to_actions}")
+    print(f"  risk_level         : {meta.risk_level.value}")
+    print(f"  mandatory          : {meta.mandatory}")
+    print(f"  citation           : {meta.citation}")
     print("=" * 68)
 
     general = _general_splitter_chunks(body)

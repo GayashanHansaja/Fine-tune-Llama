@@ -1,7 +1,15 @@
 """
-Policy ingestion — front-matter parsing + clause-aware chunking.
+Policy fixture generator — front-matter parsing + clause-aware chunking.
 
-Why this exists instead of reusing `data/ingestion/ingest_service.py`:
+SCOPE NOTE: production policy ingestion is owned by the data-transport layer,
+not by this module. This file serves two narrower purposes:
+
+  1. A reference implementation of the chunking behaviour required by
+     `docs/POLICY_PAYLOAD_CONTRACT.md` §4 — portable to their pipeline.
+  2. An offline fixture source, so the decision engine can be developed and
+     tested without depending on their collection being populated or reachable.
+
+Why the general splitter is unusable for policy text:
 
 The general ingester splits at CHUNK_SIZE=500 on character boundaries.  Applied
 to a rule like
@@ -157,7 +165,7 @@ def build_policy_documents(text: str, source: str) -> list[LCDocument]:
     ]
     logger.info(
         f"policy '{meta.policy_id}' v{meta.version} → {len(docs)} chunk(s) "
-        f"| tools={meta.applies_to_tools} | mandatory={meta.mandatory}"
+        f"| actions={meta.applies_to_actions} | mandatory={meta.mandatory}"
     )
     return docs
 

@@ -3,9 +3,7 @@ Embedding service — wraps OllamaEmbeddings.
 Swap the implementation here without touching anything else in the pipeline.
 """
 from functools import lru_cache
-# pyrefly: ignore [missing-import]
 from langchain_ollama import OllamaEmbeddings
-# pyrefly: ignore [missing-import]
 from langchain_core.embeddings import Embeddings
 from src.config.settings import settings
 import logging
