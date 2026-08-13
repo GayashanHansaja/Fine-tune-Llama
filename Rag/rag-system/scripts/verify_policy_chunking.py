@@ -18,13 +18,16 @@ from src.core.policy.policy_ingest import (
 
 POLICY_FILE = os.path.join(
     os.path.dirname(__file__), "..", "src", "data", "documents",
-    "policies", "HR-2024-007-salary-adjustments.md",
+    "policies", "FIN-VND-2026-004-vendor-bank-details.md",
 )
 
-# Rule 2.4 — a single-paragraph clause longer than CHUNK_SIZE, which is where
+# Clause 3.2 — a single-paragraph clause longer than CHUNK_SIZE, which is where
 # character-window splitting actually severs a rule from its own exception.
-THRESHOLD = "eighteen months"
-CONSEQUENCE = "departmental approval alone is sufficient"
+# The threshold ("two working days") and the exception that permits same-day
+# effect are ~700 characters apart inside one sentence.
+CLAUSE = "3.2"
+THRESHOLD = "two working days"
+CONSEQUENCE = "same-day effect is permitted"
 
 
 def _general_splitter_chunks(body: str) -> list[str]:
@@ -87,9 +90,9 @@ def main() -> None:
         head = c.split("\n", 1)[0][:60]
         print(f"  [{i}] {len(c):4d} chars | {head}")
 
-    assert p_intact >= 1, "policy chunker split rule 2.4 - threshold lost its exception"
+    assert p_intact >= 1, f"policy chunker split clause {CLAUSE} - threshold lost its exception"
     assert all(len(c) <= settings.POLICY_CHUNK_SIZE for c in policy), "chunk exceeded limit"
-    print("\nPASS - rule 2.4 survived intact and all chunks are within the size limit.")
+    print(f"\nPASS - clause {CLAUSE} survived intact and all chunks are within the size limit.")
 
 
 if __name__ == "__main__":

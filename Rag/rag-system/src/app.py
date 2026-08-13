@@ -8,15 +8,14 @@ Startup sequence:
   4. Start accepting requests
 """
 import logging
-import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from src.api.routes.policy_routes import router as policy_router
 from src.api.routes.query_routes import router
 from src.config.settings import settings
-from src.data.ingestion.ingest_service import ingest_file
 
 logging.basicConfig(
     level=logging.INFO,
@@ -25,28 +24,24 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-_SAMPLE_DOCS = os.path.join(
-    os.path.dirname(__file__), "data", "documents", "sample_docs.txt"
-)
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Run startup tasks before the server accepts requests."""
     logger.info(
         f"Starting RAG system | retriever={settings.RETRIEVER} "
-        f"| llm={settings.LLM_MODEL} | embed={settings.EMBED_MODEL}"
+        f"| llm={settings.LLM_MODEL} | judge={settings.JUDGE_MODEL} "
+        f"| embed={settings.EMBED_MODEL}"
+    )
+    logger.info(
+        f"Policy gate | collection={settings.POLICY_COLLECTION} "
+        f"| fail_closed={settings.POLICY_FAIL_CLOSED}"
     )
 
-    # Seed sample docs on first run
-    if os.path.exists(_SAMPLE_DOCS):
-        try:
-            n = ingest_file(_SAMPLE_DOCS)
-            logger.info(f"Seeded {n} chunks from sample_docs.txt")
-        except Exception as exc:
-            logger.warning(f"Sample doc seeding skipped: {exc}")
-    else:
-        logger.warning(f"sample_docs.txt not found at {_SAMPLE_DOCS}")
+    # The corpus is loaded by `python -m scripts.seed_qdrant_policies`, not here.
+    # Seeding on boot re-ingested sample_docs.txt into the data collection on every
+    # restart, and an unbounded pile of duplicate chunks in a collection the gate
+    # reads from is not something a policy decision should be exposed to.
 
     yield  # ← server is live here
 
@@ -76,6 +71,7 @@ app.add_middleware(
 )
 
 app.include_router(router)
+app.include_router(policy_router)
 
 
 # ── Health endpoint ───────────────────────────────────────────────────────────

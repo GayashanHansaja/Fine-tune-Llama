@@ -18,6 +18,9 @@ class Settings(BaseSettings):
     QDRANT_URL: str = "http://localhost:6333"
     QDRANT_COLLECTION: str = "rag_docs"
     QDRANT_API_KEY: str | None = None
+    # Seconds. The client default (~5s) is too tight for a hosted cluster —
+    # a timed-out read fails the decision closed, so it must not happen routinely.
+    QDRANT_TIMEOUT: int = 60
 
     # Pipeline tuning
     APP_PORT: int = 8000

@@ -46,6 +46,7 @@ _ALIASES: dict[str, tuple[str, ...]] = {
     "threshold_value": ("threshold_value", "thresholdValue", "threshold", "limit"),
     "threshold_unit":  ("threshold_unit", "thresholdUnit", "unit"),
     "requires_role":   ("requires_role", "requiresRole", "approver_roles", "roles"),
+    "enforces":        ("enforces", "enforcesChecks", "enforces_checks", "controls"),
 }
 
 _KNOWN_ACTIONS = set(action_names())
@@ -167,6 +168,7 @@ def to_policy_meta(payload: dict[str, Any]) -> PolicyMeta:
             else None
         ),
         requires_role=_as_list(_pick(flat, "requires_role")),
+        enforces=_as_list(_pick(flat, "enforces")),
     )
 
 

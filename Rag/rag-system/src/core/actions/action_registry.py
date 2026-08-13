@@ -1,5 +1,5 @@
 """
-Action registry — the canonical vocabulary of everything this module can do.
+Action registry — the canonical vocabulary of every finance action this module gates.
 
 This registry is a PUBLISHED CONTRACT, not an internal detail:
 
@@ -8,43 +8,49 @@ This registry is a PUBLISHED CONTRACT, not an internal detail:
     applying, so the names must be treated as a stable, versioned interface.
   • Intent extraction is constrained to these names — the model cannot invent
     an action that isn't registered.
-  • The execution gate checks the chosen name against this registry before any
-    MCP tool is invoked.
+  • The caller (the ERP front-end) executes only actions named here, and only
+    after this module has returned a verdict for that exact name.
 
 Adding an action is a coordinated change: register it here, then have the
 policy corpus re-tagged, or the new action runs with no policy coverage.
+
+SCOPE: the ERP finance module — accounts payable, payments, expenses, the
+general ledger, and budget control.  Payroll and HR actions are out of scope
+and deliberately absent.
 """
 from enum import Enum
 from typing import Any
 
 # pyrefly: ignore [missing-import]
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from src.types.policy import RiskLevel
 
-REGISTRY_VERSION = "0.1.0"
+# 0.2.0 — replaced the HR vocabulary with the finance module vocabulary.
+# Any policy still tagged with the 0.1.x HR names governs nothing.
+REGISTRY_VERSION = "0.2.0"
 
 
 class ActionName(str, Enum):
     """Canonical action identifiers. Values are what the policy corpus tags against."""
 
-    # ── Compensation ──────────────────────────────────────────────────────────
-    INCREASE_SALARY = "increase_salary"
-    DECREASE_SALARY = "decrease_salary"
-    ISSUE_BONUS = "issue_bonus"
+    # ── Accounts payable ──────────────────────────────────────────────────────
+    APPROVE_INVOICE = "approve_invoice"
+    APPROVE_PURCHASE_ORDER = "approve_purchase_order"
+    ISSUE_CREDIT_NOTE = "issue_credit_note"
 
-    # ── Employment lifecycle ──────────────────────────────────────────────────
-    PROMOTE_EMPLOYEE = "promote_employee"
-    TRANSFER_DEPARTMENT = "transfer_department"
-    TERMINATE_EMPLOYEE = "terminate_employee"
+    # ── Disbursement ──────────────────────────────────────────────────────────
+    RELEASE_PAYMENT = "release_payment"
+    UPDATE_VENDOR_BANK_DETAILS = "update_vendor_bank_details"
 
-    # ── Leave ─────────────────────────────────────────────────────────────────
-    APPROVE_LEAVE = "approve_leave"
-    REJECT_LEAVE = "reject_leave"
+    # ── Employee expenses ─────────────────────────────────────────────────────
+    APPROVE_TRAVEL_CLAIM = "approve_travel_claim"
+    REIMBURSE_EXPENSE = "reimburse_expense"
 
-    # ── Sensitive records ─────────────────────────────────────────────────────
-    UPDATE_BANK_DETAILS = "update_bank_details"
-    VIEW_SALARY_RECORD = "view_salary_record"
+    # ── General ledger and budget ─────────────────────────────────────────────
+    POST_JOURNAL_ENTRY = "post_journal_entry"
+    APPROVE_BUDGET_TRANSFER = "approve_budget_transfer"
+    VIEW_LEDGER_ENTRY = "view_ledger_entry"
 
 
 class ActionSpec(BaseModel):
@@ -59,184 +65,205 @@ class ActionSpec(BaseModel):
     description: str
     params_schema: dict[str, Any]
     risk: RiskLevel
-    financial: bool = False          # touches money → stricter thresholds apply
-    mutates_pii: bool = False        # touches personal data → privacy policy applies
-    self_target_forbidden: bool = True   # actor may not target themselves
+    financial: bool = False          # moves money → stricter thresholds apply
+    mutates_pii: bool = False        # touches personal/bank data → privacy policy applies
+    # Segregation of duties: the actor may not approve a document they raised,
+    # or one that pays them. Checked in the rule engine against actor identity.
+    self_approval_forbidden: bool = True
 
     @property
     def is_mutation(self) -> bool:
-        return self.name != ActionName.VIEW_SALARY_RECORD
+        return self.name != ActionName.VIEW_LEDGER_ENTRY
 
 
-def _employee_target() -> dict[str, Any]:
+def _amount() -> dict[str, Any]:
     return {
-        "type": "string",
-        "description": "Employee ID of the person the action applies to",
-        "minLength": 1,
+        "type": "number",
+        "exclusiveMinimum": 0,
+        "description": "Transaction amount in the document currency",
     }
 
 
 _SPECS: dict[ActionName, ActionSpec] = {
-    ActionName.INCREASE_SALARY: ActionSpec(
-        name=ActionName.INCREASE_SALARY,
-        description="Raise an employee's base salary by an absolute amount or a percentage.",
+    ActionName.APPROVE_INVOICE: ActionSpec(
+        name=ActionName.APPROVE_INVOICE,
+        description="Approve a supplier invoice for payment.",
         risk=RiskLevel.HIGH,
         financial=True,
         params_schema={
             "type": "object",
             "properties": {
-                "employee_id": _employee_target(),
-                # Exactly one of these must be supplied — an ambiguous
-                # "increase from 50000" must not be silently coerced.
-                "amount": {"type": "number", "exclusiveMinimum": 0},
-                "percentage": {"type": "number", "exclusiveMinimum": 0, "maximum": 100},
-                "effective_date": {"type": "string", "format": "date"},
-                "reason": {"type": "string"},
+                "invoice_id": {"type": "string", "minLength": 1},
+                "vendor_id": {"type": "string"},
+                "amount": _amount(),
+                "currency": {"type": "string", "minLength": 3, "maxLength": 3},
+                "cost_centre": {"type": "string"},
             },
-            "required": ["employee_id"],
-            "oneOf": [{"required": ["amount"]}, {"required": ["percentage"]}],
+            "required": ["invoice_id"],
             "additionalProperties": False,
         },
     ),
-    ActionName.DECREASE_SALARY: ActionSpec(
-        name=ActionName.DECREASE_SALARY,
-        description="Reduce an employee's base salary.",
-        risk=RiskLevel.CRITICAL,
-        financial=True,
-        params_schema={
-            "type": "object",
-            "properties": {
-                "employee_id": _employee_target(),
-                "amount": {"type": "number", "exclusiveMinimum": 0},
-                "percentage": {"type": "number", "exclusiveMinimum": 0, "maximum": 100},
-                "effective_date": {"type": "string", "format": "date"},
-                "reason": {"type": "string"},
-            },
-            "required": ["employee_id", "reason"],
-            "oneOf": [{"required": ["amount"]}, {"required": ["percentage"]}],
-            "additionalProperties": False,
-        },
-    ),
-    ActionName.ISSUE_BONUS: ActionSpec(
-        name=ActionName.ISSUE_BONUS,
-        description="Grant a one-time bonus payment to an employee.",
+    ActionName.APPROVE_PURCHASE_ORDER: ActionSpec(
+        name=ActionName.APPROVE_PURCHASE_ORDER,
+        description="Approve a purchase order committing the organization to a spend.",
         risk=RiskLevel.HIGH,
         financial=True,
         params_schema={
             "type": "object",
             "properties": {
-                "employee_id": _employee_target(),
-                "amount": {"type": "number", "exclusiveMinimum": 0},
-                "reason": {"type": "string"},
+                "purchase_order_id": {"type": "string", "minLength": 1},
+                "vendor_id": {"type": "string"},
+                "amount": _amount(),
+                "currency": {"type": "string", "minLength": 3, "maxLength": 3},
+                "cost_centre": {"type": "string"},
             },
-            "required": ["employee_id", "amount"],
+            "required": ["purchase_order_id"],
             "additionalProperties": False,
         },
     ),
-    ActionName.PROMOTE_EMPLOYEE: ActionSpec(
-        name=ActionName.PROMOTE_EMPLOYEE,
-        description="Change an employee's job title or grade.",
+    ActionName.ISSUE_CREDIT_NOTE: ActionSpec(
+        name=ActionName.ISSUE_CREDIT_NOTE,
+        description="Issue a credit note reversing or reducing a previously booked charge.",
         risk=RiskLevel.HIGH,
-        params_schema={
-            "type": "object",
-            "properties": {
-                "employee_id": _employee_target(),
-                "new_title": {"type": "string", "minLength": 1},
-                "new_grade": {"type": "string"},
-                "effective_date": {"type": "string", "format": "date"},
-            },
-            "required": ["employee_id", "new_title"],
-            "additionalProperties": False,
-        },
-    ),
-    ActionName.TRANSFER_DEPARTMENT: ActionSpec(
-        name=ActionName.TRANSFER_DEPARTMENT,
-        description="Move an employee to a different department.",
-        risk=RiskLevel.MEDIUM,
-        params_schema={
-            "type": "object",
-            "properties": {
-                "employee_id": _employee_target(),
-                "target_department": {"type": "string", "minLength": 1},
-                "effective_date": {"type": "string", "format": "date"},
-            },
-            "required": ["employee_id", "target_department"],
-            "additionalProperties": False,
-        },
-    ),
-    ActionName.TERMINATE_EMPLOYEE: ActionSpec(
-        name=ActionName.TERMINATE_EMPLOYEE,
-        description="End an employee's employment.",
-        risk=RiskLevel.CRITICAL,
         financial=True,
-        mutates_pii=True,
         params_schema={
             "type": "object",
             "properties": {
-                "employee_id": _employee_target(),
-                "termination_date": {"type": "string", "format": "date"},
+                "invoice_id": {"type": "string", "minLength": 1},
+                "amount": _amount(),
                 "reason": {"type": "string", "minLength": 1},
             },
-            "required": ["employee_id", "termination_date", "reason"],
+            # A credit note without a reason is indistinguishable from
+            # concealment of an erroneous charge.
+            "required": ["invoice_id", "amount", "reason"],
             "additionalProperties": False,
         },
     ),
-    ActionName.APPROVE_LEAVE: ActionSpec(
-        name=ActionName.APPROVE_LEAVE,
-        description="Approve a pending leave request.",
-        risk=RiskLevel.LOW,
+    ActionName.RELEASE_PAYMENT: ActionSpec(
+        name=ActionName.RELEASE_PAYMENT,
+        description="Release funds against an approved invoice or payment run.",
+        risk=RiskLevel.CRITICAL,
+        financial=True,
         params_schema={
             "type": "object",
             "properties": {
-                "employee_id": _employee_target(),
-                "leave_request_id": {"type": "string", "minLength": 1},
+                "invoice_id": {"type": "string"},
+                "payment_run_id": {"type": "string"},
+                "vendor_id": {"type": "string"},
+                "amount": _amount(),
+                "currency": {"type": "string", "minLength": 3, "maxLength": 3},
+                "value_date": {"type": "string", "format": "date"},
             },
-            "required": ["leave_request_id"],
+            # Exactly one target — "pay it" against an ambiguous reference must
+            # not be silently resolved to whichever document looked closest.
+            "oneOf": [
+                {"required": ["invoice_id"]},
+                {"required": ["payment_run_id"]},
+            ],
             "additionalProperties": False,
         },
     ),
-    ActionName.REJECT_LEAVE: ActionSpec(
-        name=ActionName.REJECT_LEAVE,
-        description="Reject a pending leave request.",
-        risk=RiskLevel.LOW,
-        params_schema={
-            "type": "object",
-            "properties": {
-                "employee_id": _employee_target(),
-                "leave_request_id": {"type": "string", "minLength": 1},
-                "reason": {"type": "string"},
-            },
-            "required": ["leave_request_id"],
-            "additionalProperties": False,
-        },
-    ),
-    ActionName.UPDATE_BANK_DETAILS: ActionSpec(
-        name=ActionName.UPDATE_BANK_DETAILS,
-        description="Change the bank account salary is paid into.",
+    ActionName.UPDATE_VENDOR_BANK_DETAILS: ActionSpec(
+        name=ActionName.UPDATE_VENDOR_BANK_DETAILS,
+        description="Change the bank account a vendor is paid into.",
         risk=RiskLevel.CRITICAL,
         financial=True,
         mutates_pii=True,
         params_schema={
             "type": "object",
             "properties": {
-                "employee_id": _employee_target(),
+                "vendor_id": {"type": "string", "minLength": 1},
                 "account_number": {"type": "string", "minLength": 1},
                 "bank_code": {"type": "string"},
+                "account_name": {"type": "string"},
             },
-            "required": ["employee_id", "account_number"],
+            "required": ["vendor_id", "account_number"],
             "additionalProperties": False,
         },
     ),
-    ActionName.VIEW_SALARY_RECORD: ActionSpec(
-        name=ActionName.VIEW_SALARY_RECORD,
-        description="Read an employee's compensation record.",
+    ActionName.APPROVE_TRAVEL_CLAIM: ActionSpec(
+        name=ActionName.APPROVE_TRAVEL_CLAIM,
+        description="Approve an employee travel expense claim for reimbursement.",
         risk=RiskLevel.MEDIUM,
-        mutates_pii=True,
-        self_target_forbidden=False,   # viewing your own record is normal
+        financial=True,
         params_schema={
             "type": "object",
-            "properties": {"employee_id": _employee_target()},
-            "required": ["employee_id"],
+            "properties": {
+                "claim_id": {"type": "string", "minLength": 1},
+                "employee_id": {"type": "string"},
+                "amount": _amount(),
+                "travel_permit_id": {"type": "string"},
+            },
+            "required": ["claim_id"],
+            "additionalProperties": False,
+        },
+    ),
+    ActionName.REIMBURSE_EXPENSE: ActionSpec(
+        name=ActionName.REIMBURSE_EXPENSE,
+        description="Pay an approved expense claim back to an employee.",
+        risk=RiskLevel.HIGH,
+        financial=True,
+        params_schema={
+            "type": "object",
+            "properties": {
+                "claim_id": {"type": "string", "minLength": 1},
+                "employee_id": {"type": "string"},
+                "amount": _amount(),
+            },
+            "required": ["claim_id"],
+            "additionalProperties": False,
+        },
+    ),
+    ActionName.POST_JOURNAL_ENTRY: ActionSpec(
+        name=ActionName.POST_JOURNAL_ENTRY,
+        description="Post a manual journal entry to the general ledger.",
+        risk=RiskLevel.HIGH,
+        financial=True,
+        params_schema={
+            "type": "object",
+            "properties": {
+                "debit_account": {"type": "string", "minLength": 1},
+                "credit_account": {"type": "string", "minLength": 1},
+                "amount": _amount(),
+                "period": {"type": "string", "description": "Accounting period, e.g. 2026-07"},
+                "narration": {"type": "string", "minLength": 1},
+            },
+            "required": ["debit_account", "credit_account", "amount", "narration"],
+            "additionalProperties": False,
+        },
+    ),
+    ActionName.APPROVE_BUDGET_TRANSFER: ActionSpec(
+        name=ActionName.APPROVE_BUDGET_TRANSFER,
+        description="Move budget between cost centres or budget lines.",
+        risk=RiskLevel.MEDIUM,
+        financial=True,
+        params_schema={
+            "type": "object",
+            "properties": {
+                "from_cost_centre": {"type": "string", "minLength": 1},
+                "to_cost_centre": {"type": "string", "minLength": 1},
+                "amount": _amount(),
+                "percentage": {"type": "number", "exclusiveMinimum": 0, "maximum": 100},
+                "reason": {"type": "string"},
+            },
+            "required": ["from_cost_centre", "to_cost_centre"],
+            "additionalProperties": False,
+        },
+    ),
+    ActionName.VIEW_LEDGER_ENTRY: ActionSpec(
+        name=ActionName.VIEW_LEDGER_ENTRY,
+        description="Read ledger entries, vendor records, or payment history.",
+        risk=RiskLevel.MEDIUM,
+        mutates_pii=True,
+        self_approval_forbidden=False,   # reading is not approving
+        params_schema={
+            "type": "object",
+            "properties": {
+                "account": {"type": "string"},
+                "vendor_id": {"type": "string"},
+                "cost_centre": {"type": "string"},
+                "period": {"type": "string"},
+            },
             "additionalProperties": False,
         },
     ),

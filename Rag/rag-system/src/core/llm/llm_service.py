@@ -34,3 +34,21 @@ def get_llm() -> BaseChatModel:
         temperature=0.1,          # low temp → factual, grounded answers
         num_predict=1024,         # max tokens to generate
     )
+
+
+@lru_cache(maxsize=1)
+def get_judge_llm() -> BaseChatModel:
+    """
+    Return the cached model used for policy judgement.
+
+    Separate from `get_llm()` on purpose: JUDGE_MODEL is deliberately larger than
+    LLM_MODEL, and temperature is pinned to 0. A compliance verdict that varies
+    between two identical requests cannot be defended in an audit.
+    """
+    logger.info(f"Loading judge LLM: model={settings.JUDGE_MODEL}")
+    return ChatOllama(
+        base_url=settings.LLM_BASE_URL,
+        model=settings.JUDGE_MODEL,
+        temperature=0.0,
+        num_predict=768,
+    )
