@@ -4,9 +4,6 @@ from functools import lru_cache
 
 
 class Settings(BaseSettings):
-    # Retriever backend
-    RETRIEVER: str = "mock"         # "mock" | "qdrant"
-
     # Ollama
     LLM_BASE_URL: str = "http://localhost:11434"
     LLM_MODEL: str = "llama3"
@@ -22,11 +19,12 @@ class Settings(BaseSettings):
     # a timed-out read fails the decision closed, so it must not happen routinely.
     QDRANT_TIMEOUT: int = 60
 
-    # Pipeline tuning
-    APP_PORT: int = 8000
+    # Baseline splitter settings. Nothing in the gate uses these — they exist so
+    # `scripts.verify_policy_chunking` can reproduce what a general character-window
+    # splitter does to a policy clause, which is the comparison that justifies the
+    # clause-aware chunker.
     CHUNK_SIZE: int = 500
     CHUNK_OVERLAP: int = 50
-    TOP_K: int = 4
 
     # Policy gate
     POLICY_COLLECTION: str = "policy_docs"   # kept separate from QDRANT_COLLECTION
@@ -36,9 +34,8 @@ class Settings(BaseSettings):
     JUDGE_MODEL: str = "llama3.1:8b"         # deliberately larger than LLM_MODEL
     POLICY_FAIL_CLOSED: bool = True          # judge error/timeout ⇒ DENY, never allow
 
-    # Tool provider backend
-    TOOL_PROVIDER: str = "mock"              # "mock" | "mcp"
-    MCP_SERVER_URL: str = ""
+    # No tool-provider settings: this service returns a decision, it does not
+    # execute. The caller holds the MCP/ERP credentials.
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 

@@ -3,9 +3,10 @@ app.py — FastAPI application entry point.
 
 Startup sequence:
   1. Load settings from .env
-  2. Initialise the retriever (mock or qdrant)
-  3. Seed the vector store from sample_docs.txt
-  4. Start accepting requests
+  2. Report the policy-gate configuration
+  3. Start accepting requests
+
+The corpus is not loaded here — see `python -m scripts.seed_qdrant_policies`.
 """
 import logging
 from contextlib import asynccontextmanager
@@ -14,7 +15,6 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from src.api.routes.policy_routes import router as policy_router
-from src.api.routes.query_routes import router
 from src.config.settings import settings
 
 logging.basicConfig(
@@ -29,35 +29,38 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     """Run startup tasks before the server accepts requests."""
     logger.info(
-        f"Starting RAG system | retriever={settings.RETRIEVER} "
-        f"| llm={settings.LLM_MODEL} | judge={settings.JUDGE_MODEL} "
-        f"| embed={settings.EMBED_MODEL}"
+        f"Starting policy gate | llm={settings.LLM_MODEL} "
+        f"| judge={settings.JUDGE_MODEL} | embed={settings.EMBED_MODEL}"
     )
     logger.info(
-        f"Policy gate | collection={settings.POLICY_COLLECTION} "
+        f"Policy collection={settings.POLICY_COLLECTION} "
         f"| fail_closed={settings.POLICY_FAIL_CLOSED}"
     )
 
     # The corpus is loaded by `python -m scripts.seed_qdrant_policies`, not here.
-    # Seeding on boot re-ingested sample_docs.txt into the data collection on every
+    # Seeding on boot re-ingested its source file into the collection on every
     # restart, and an unbounded pile of duplicate chunks in a collection the gate
     # reads from is not something a policy decision should be exposed to.
 
     yield  # ← server is live here
 
-    logger.info("RAG system shutting down — goodbye!")
+    logger.info("Policy gate shutting down — goodbye!")
 
 
 # ── FastAPI app ───────────────────────────────────────────────────────────────
 
 app = FastAPI(
-    title="Modular RAG API",
+    title="ERP Finance Policy Gate",
     description=(
-        "A swappable Retrieval-Augmented Generation pipeline.\n\n"
-        "**Pipeline:** `query → embed → retrieve → prompt → LLM → answer`\n\n"
-        "Switch the vector backend by setting `RETRIEVER=mock|qdrant` in `.env`."
+        "Decides whether a natural-language finance request is permitted under "
+        "company policy, and returns what the caller needs to execute it.\n\n"
+        "**Pipeline:** `prompt → intent → retrieve rules → deterministic checks "
+        "→ judge → verdict`\n\n"
+        "This service does not execute anything. `POST /api/policy/evaluate` "
+        "returns a decision, the proposed action, the clauses it rests on, and "
+        "any conditions the caller must satisfy first."
     ),
-    version="1.0.0",
+    version="2.0.0",
     lifespan=lifespan,
     docs_url="/docs",
     redoc_url="/redoc",
@@ -70,7 +73,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(router)
 app.include_router(policy_router)
 
 
@@ -78,13 +80,28 @@ app.include_router(policy_router)
 
 @app.get("/health", tags=["System"], summary="Health check")
 def health():
-    """Returns current configuration and doc count."""
-    from src.core.retriever.retriever_factory import get_retriever
-    retriever = get_retriever()
+    """
+    Current configuration and policy-corpus size.
+
+    Reports the policy collection specifically: the gate is only as good as the
+    rules it can see, and a collection that is reachable but empty would
+    otherwise look identical to a healthy one.
+    """
+    from src.core.policy.policy_retriever import get_policy_retriever
+
+    try:
+        chunks = get_policy_retriever().corpus_size()
+        store = "ok" if chunks else "empty"
+    except Exception as exc:  # noqa: BLE001 — health must report, not raise
+        chunks, store = 0, f"unreachable: {type(exc).__name__}"
+
     return {
-        "status": "ok",
-        "retriever": settings.RETRIEVER,
+        "status": "ok" if store == "ok" else "degraded",
+        "policy_store": store,
+        "policy_collection": settings.POLICY_COLLECTION,
+        "policy_chunks": chunks,
         "llm_model": settings.LLM_MODEL,
+        "judge_model": settings.JUDGE_MODEL,
         "embed_model": settings.EMBED_MODEL,
-        "docs_in_store": retriever.doc_count(),
+        "fail_closed": settings.POLICY_FAIL_CLOSED,
     }

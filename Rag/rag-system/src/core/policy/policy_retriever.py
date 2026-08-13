@@ -233,7 +233,7 @@ class PolicyRetriever:
         predicates, so a question can never be answered out of company data or a
         rule that was replaced last year.
         """
-        limit = top_k if top_k is not None else settings.TOP_K
+        limit = top_k if top_k is not None else settings.POLICY_TOP_K
         return self._to_chunks(self._search(prompt, limit), "semantic")
 
     def has_coverage(self, action: str) -> bool:
@@ -246,6 +246,10 @@ class PolicyRetriever:
             with_vectors=False,
         )
         return bool(points)
+
+    def corpus_size(self) -> int:
+        """Number of policy chunks the gate can currently see."""
+        return self._client.get_collection(self._collection).points_count or 0
 
 
 _instance: PolicyRetriever | None = None
