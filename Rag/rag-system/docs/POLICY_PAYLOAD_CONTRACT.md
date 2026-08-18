@@ -82,6 +82,16 @@ A rule that states no limit simply omits these fields and is judged on its text.
 `threshold_unit` also selects which fact the limit is compared against:
 `absolute` → `amount`, `percent` → `percentage`, `days` → `days`.
 
+**Known gap — conditional limits.** A limit that applies only in certain
+circumstances ("cross-border payments above 500,000 require treasury sign-off")
+cannot be expressed today. Tagging it as a plain `threshold_value` would compare
+*every* domestic payment against it and report a breach that does not exist, so
+such rules are currently left for the judge to read as text — losing the
+deterministic check exactly where the stakes are highest. If you can surface an
+`applies_when` predicate (e.g. `{"currency": {"not": "LKR"}}`) alongside the
+threshold, we can evaluate these in code too. Worth discussing before you build
+the extraction.
+
 ---
 
 ## 3. Action vocabulary — tag `applies_to_actions` with these exact strings

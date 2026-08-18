@@ -53,6 +53,21 @@ class ActionName(str, Enum):
     VIEW_LEDGER_ENTRY = "view_ledger_entry"
 
 
+class MoneyFlow(str, Enum):
+    """
+    Which way money moves, from this organisation's point of view.
+
+    Recorded because an extractor asked "which of these ten fits best?" will
+    always answer with one of the ten. A request to record an incoming customer
+    receipt was mapped to `release_payment` — an outbound disbursement — with high
+    confidence, and the parameters validated cleanly. Direction is the one
+    property of a finance action that must never be inferred from wording.
+    """
+    OUT = "out"          # money leaves the organisation
+    IN = "in"            # money arrives
+    NEUTRAL = "neutral"  # no movement: reads, reclassifications, commitments
+
+
 class ActionSpec(BaseModel):
     """
     One registered action.
@@ -65,6 +80,7 @@ class ActionSpec(BaseModel):
     description: str
     params_schema: dict[str, Any]
     risk: RiskLevel
+    flow: MoneyFlow = MoneyFlow.NEUTRAL
     financial: bool = False          # moves money → stricter thresholds apply
     mutates_pii: bool = False        # touches personal/bank data → privacy policy applies
     # Segregation of duties: the actor may not approve a document they raised,
@@ -88,6 +104,7 @@ _SPECS: dict[ActionName, ActionSpec] = {
     ActionName.APPROVE_INVOICE: ActionSpec(
         name=ActionName.APPROVE_INVOICE,
         description="Approve a supplier invoice for payment.",
+        flow=MoneyFlow.OUT,
         risk=RiskLevel.HIGH,
         financial=True,
         params_schema={
@@ -106,6 +123,7 @@ _SPECS: dict[ActionName, ActionSpec] = {
     ActionName.APPROVE_PURCHASE_ORDER: ActionSpec(
         name=ActionName.APPROVE_PURCHASE_ORDER,
         description="Approve a purchase order committing the organization to a spend.",
+        flow=MoneyFlow.OUT,
         risk=RiskLevel.HIGH,
         financial=True,
         params_schema={
@@ -124,6 +142,7 @@ _SPECS: dict[ActionName, ActionSpec] = {
     ActionName.ISSUE_CREDIT_NOTE: ActionSpec(
         name=ActionName.ISSUE_CREDIT_NOTE,
         description="Issue a credit note reversing or reducing a previously booked charge.",
+        flow=MoneyFlow.NEUTRAL,
         risk=RiskLevel.HIGH,
         financial=True,
         params_schema={
@@ -142,6 +161,7 @@ _SPECS: dict[ActionName, ActionSpec] = {
     ActionName.RELEASE_PAYMENT: ActionSpec(
         name=ActionName.RELEASE_PAYMENT,
         description="Release funds against an approved invoice or payment run.",
+        flow=MoneyFlow.OUT,
         risk=RiskLevel.CRITICAL,
         financial=True,
         params_schema={
@@ -166,6 +186,7 @@ _SPECS: dict[ActionName, ActionSpec] = {
     ActionName.UPDATE_VENDOR_BANK_DETAILS: ActionSpec(
         name=ActionName.UPDATE_VENDOR_BANK_DETAILS,
         description="Change the bank account a vendor is paid into.",
+        flow=MoneyFlow.OUT,
         risk=RiskLevel.CRITICAL,
         financial=True,
         mutates_pii=True,
@@ -184,6 +205,7 @@ _SPECS: dict[ActionName, ActionSpec] = {
     ActionName.APPROVE_TRAVEL_CLAIM: ActionSpec(
         name=ActionName.APPROVE_TRAVEL_CLAIM,
         description="Approve an employee travel expense claim for reimbursement.",
+        flow=MoneyFlow.OUT,
         risk=RiskLevel.MEDIUM,
         financial=True,
         params_schema={
@@ -201,6 +223,7 @@ _SPECS: dict[ActionName, ActionSpec] = {
     ActionName.REIMBURSE_EXPENSE: ActionSpec(
         name=ActionName.REIMBURSE_EXPENSE,
         description="Pay an approved expense claim back to an employee.",
+        flow=MoneyFlow.OUT,
         risk=RiskLevel.HIGH,
         financial=True,
         params_schema={
@@ -217,6 +240,7 @@ _SPECS: dict[ActionName, ActionSpec] = {
     ActionName.POST_JOURNAL_ENTRY: ActionSpec(
         name=ActionName.POST_JOURNAL_ENTRY,
         description="Post a manual journal entry to the general ledger.",
+        flow=MoneyFlow.NEUTRAL,
         risk=RiskLevel.HIGH,
         financial=True,
         params_schema={
@@ -235,6 +259,7 @@ _SPECS: dict[ActionName, ActionSpec] = {
     ActionName.APPROVE_BUDGET_TRANSFER: ActionSpec(
         name=ActionName.APPROVE_BUDGET_TRANSFER,
         description="Move budget between cost centres or budget lines.",
+        flow=MoneyFlow.NEUTRAL,
         risk=RiskLevel.MEDIUM,
         financial=True,
         params_schema={
@@ -253,6 +278,7 @@ _SPECS: dict[ActionName, ActionSpec] = {
     ActionName.VIEW_LEDGER_ENTRY: ActionSpec(
         name=ActionName.VIEW_LEDGER_ENTRY,
         description="Read ledger entries, vendor records, or payment history.",
+        flow=MoneyFlow.NEUTRAL,
         risk=RiskLevel.MEDIUM,
         mutates_pii=True,
         self_approval_forbidden=False,   # reading is not approving

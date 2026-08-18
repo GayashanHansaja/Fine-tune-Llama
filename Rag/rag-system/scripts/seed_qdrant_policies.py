@@ -186,10 +186,16 @@ def ensure_collection(client, name: str, recreate: bool) -> None:
             logger.debug(f"payload index {field} on '{name}': {exc}")
 
 
-def upsert(client, name: str, docs: list[LCDocument]) -> int:
-    if not docs:
-        return 0
+def build_points(docs: list[LCDocument]) -> list[qm.PointStruct]:
+    """
+    Embed every chunk and build its point.
 
+    Kept separate from writing, and called BEFORE the collection is touched:
+    embedding is the step that reaches out to Ollama and so the step that fails.
+    Dropping the collection first and discovering the embedder is down afterwards
+    leaves an empty collection — and an empty policy collection is a gate that
+    retrieves no rules at all. (Observed twice; not hypothetical.)
+    """
     embeddings = get_embeddings()
     vectors = embeddings.embed_documents([d.page_content for d in docs])
 
@@ -207,8 +213,7 @@ def upsert(client, name: str, docs: list[LCDocument]) -> int:
             )
         )
 
-    client.upsert(collection_name=name, points=points, wait=True)
-    return len(points)
+    return points
 
 
 # ── Report ───────────────────────────────────────────────────────────────────
@@ -291,15 +296,23 @@ def main() -> int:
         return 0
 
     client = get_qdrant_client()
+
+    # Embed everything first. Nothing in Qdrant is touched until every vector for
+    # every collection exists, so a failure here leaves the current corpus serving.
+    prepared = [
+        (collection, build_points(docs))
+        for collection, docs in (
+            (settings.POLICY_COLLECTION, policy_docs),
+            (settings.QDRANT_COLLECTION, data_docs),
+        )
+        if docs
+    ]
+
     written = 0
-    for collection, docs in (
-        (settings.POLICY_COLLECTION, policy_docs),
-        (settings.QDRANT_COLLECTION, data_docs),
-    ):
-        if not docs:
-            continue
+    for collection, points in prepared:
         ensure_collection(client, collection, args.recreate)
-        count = upsert(client, collection, docs)
+        client.upsert(collection_name=collection, points=points, wait=True)
+        count = len(points)
         written += count
         total = client.get_collection(collection).points_count
         print(f"\n  upserted {count} points into '{collection}' (now {total} total)")

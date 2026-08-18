@@ -233,7 +233,7 @@ class PolicyRetriever:
         predicates, so a question can never be answered out of company data or a
         rule that was replaced last year.
         """
-        limit = top_k if top_k is not None else settings.TOP_K
+        limit = top_k if top_k is not None else settings.POLICY_TOP_K
         return self._to_chunks(self._search(prompt, limit), "semantic")
 
     def has_coverage(self, action: str) -> bool:
@@ -246,6 +246,30 @@ class PolicyRetriever:
             with_vectors=False,
         )
         return bool(points)
+
+    def governing(self, action: str) -> list[PolicyChunk]:
+        """
+        Every rule that governs `action` by filter alone — no similarity.
+
+        This is queries (a) and (b) without (c), which is what a coverage audit
+        needs: a clause pulled in by similarity is not coverage, it is a
+        coincidence of wording that a rephrased request would lose.
+        """
+        chunks: list[PolicyChunk] = []
+        seen: set[str] = set()
+        for found in (
+            self._scroll_all(_mandatory_filter(), "mandatory"),
+            self._scroll_all(_action_filter(action), "action"),
+        ):
+            for chunk in found:
+                if chunk.key not in seen:
+                    seen.add(chunk.key)
+                    chunks.append(chunk)
+        return chunks
+
+    def corpus_size(self) -> int:
+        """Number of policy chunks the gate can currently see."""
+        return self._client.get_collection(self._collection).points_count or 0
 
 
 _instance: PolicyRetriever | None = None

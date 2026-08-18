@@ -21,7 +21,15 @@ from src.types.policy import Citation, Condition, PolicyDecision
 
 class RequestType(str, Enum):
     ACTION = "action"        # the prompt asks for something to be done
-    QUESTION = "question"    # the prompt asks about policy or data
+    QUESTION = "question"    # the prompt asks about policy — answered from the corpus
+    # Asks for records, totals, or lists. This service holds policy, not data, so
+    # it is refused rather than routed onward: a caller reads "routed" as
+    # "permitted", and whether records may be disclosed is precisely the kind of
+    # decision this service exists to make rather than delegate.
+    DATA = "data"
+    # A finance request outside the registered vocabulary. Distinct from UNCLEAR:
+    # the request was understood, and this system does not do it.
+    UNSUPPORTED = "unsupported"
     UNCLEAR = "unclear"      # neither could be established — never executed
 
 
