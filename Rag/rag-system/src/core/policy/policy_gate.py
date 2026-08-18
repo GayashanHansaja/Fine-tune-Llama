@@ -115,6 +115,29 @@ async def _evaluate(request: EvaluateRequest) -> EvaluateResponse:
     if intent.request_type == "question":
         return await _answer_question(request_id, prompt, request)
 
+    if intent.request_type == "data":
+        # Not answered from the policy corpus. Asked "who earns more than 25000",
+        # the semantic search returned the payment-release policy — because that
+        # phrasing embeds near payment thresholds — and would have answered a
+        # payroll question out of a payments rule. Refusing names the boundary.
+        return _refuse(
+            request_id,
+            "This service decides whether finance actions are permitted; it does "
+            "not hold ledger, employee, or transaction records and cannot answer "
+            "questions about them. Ask the reporting system for data."
+            + (f" ({intent.note})" if intent.note else ""),
+            request_type=RequestType.DATA,
+        )
+
+    if intent.request_type == "unsupported":
+        return _refuse(
+            request_id,
+            intent.note
+            or "This system governs a specific set of accounts-payable actions, "
+               "and the request is not one of them.",
+            request_type=RequestType.UNSUPPORTED,
+        )
+
     if intent.request_type != "action" or not intent.action:
         return _refuse(
             request_id,

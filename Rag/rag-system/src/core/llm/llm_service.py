@@ -33,6 +33,7 @@ def get_llm() -> BaseChatModel:
         model=settings.LLM_MODEL,
         temperature=0.1,          # low temp → factual, grounded answers
         num_predict=1024,         # max tokens to generate
+        format="json",            # see get_judge_llm() — both callers parse JSON
     )
 
 
@@ -51,4 +52,11 @@ def get_judge_llm() -> BaseChatModel:
         model=settings.JUDGE_MODEL,
         temperature=0.0,
         num_predict=768,
+        # Constrain decoding to JSON. Without this the model wrote prose and the
+        # parser scraped a JSON block out of it — which failed often enough that a
+        # parse error became a routine source of denials. A denial that comes from
+        # a bad parse looks exactly like a principled one, and it hid a real
+        # mis-mapping (an inbound receipt read as an outbound payment) for a while.
+        # The regex and the fail-closed branch stay as backstops; this makes them rare.
+        format="json",
     )
