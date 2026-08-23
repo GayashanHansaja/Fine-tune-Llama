@@ -1,0 +1,386 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ERP Finance Policy Gate — demo</title>
+<style>
+  :root {
+    --bg:#0f1115; --panel:#171a21; --panel2:#1d212a; --line:#2a2f3a;
+    --text:#e6e9ef; --dim:#98a1b3; --faint:#6b7383;
+    --allow:#3fb950; --cond:#d29922; --deny:#f85149; --review:#a371f7; --answer:#58a6ff;
+    --mono: ui-monospace, "Cascadia Code", "Consolas", monospace;
+  }
+  * { box-sizing:border-box; }
+  body {
+    margin:0; background:var(--bg); color:var(--text);
+    font:14px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  header {
+    padding:14px 20px; border-bottom:1px solid var(--line);
+    display:flex; align-items:baseline; gap:14px; flex-wrap:wrap;
+  }
+  header h1 { font-size:15px; margin:0; font-weight:600; letter-spacing:.2px; }
+  header .sub { color:var(--faint); font-size:12px; }
+  #health { margin-left:auto; font-size:12px; color:var(--dim); font-family:var(--mono); }
+  #health b { color:var(--faint); font-weight:500; }
+
+  main { display:grid; grid-template-columns:minmax(340px,420px) 1fr; gap:0; align-items:start; }
+  @media (max-width:900px){ main { grid-template-columns:1fr; } }
+
+  .left  { padding:20px; border-right:1px solid var(--line); }
+  .right { padding:20px; min-width:0; }
+  @media (max-width:900px){ .left { border-right:0; border-bottom:1px solid var(--line); } }
+
+  label { display:block; font-size:11px; text-transform:uppercase; letter-spacing:.7px;
+          color:var(--faint); margin:0 0 5px; }
+  .field { margin-bottom:14px; }
+  select, input[type=text], input[type=number], textarea {
+    width:100%; background:var(--panel); color:var(--text);
+    border:1px solid var(--line); border-radius:6px; padding:8px 10px;
+    font:inherit; outline:none;
+  }
+  textarea { resize:vertical; min-height:76px; font-family:var(--mono); font-size:13px; }
+  select:focus, input:focus, textarea:focus { border-color:#3d5afe55; box-shadow:0 0 0 2px #3d5afe22; }
+  .row { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+
+  .check { display:flex; align-items:flex-start; gap:8px; margin-bottom:16px; }
+  .check input { margin-top:2px; }
+  .check span { font-size:12.5px; color:var(--dim); }
+
+  button.go {
+    width:100%; padding:10px; border-radius:6px; border:1px solid #2f6feb;
+    background:#1f6feb; color:#fff; font:inherit; font-weight:600; cursor:pointer;
+  }
+  button.go:hover { background:#2b7bf3; }
+  button.go:disabled { opacity:.55; cursor:default; }
+
+  .presets { margin-top:20px; padding-top:16px; border-top:1px solid var(--line); }
+  .presets p { margin:0 0 9px; font-size:11px; text-transform:uppercase;
+               letter-spacing:.7px; color:var(--faint); }
+  .presets button {
+    display:block; width:100%; text-align:left; margin-bottom:6px;
+    background:var(--panel); color:var(--dim); border:1px solid var(--line);
+    border-radius:6px; padding:8px 10px; font:inherit; font-size:12.5px; cursor:pointer;
+  }
+  .presets button:hover { background:var(--panel2); color:var(--text); border-color:#3a4150; }
+  .presets button i { display:block; font-style:normal; font-size:11px; color:var(--faint); margin-top:2px; }
+
+  .placeholder { color:var(--faint); font-size:13px; padding:40px 0; text-align:center; }
+
+  .badge {
+    display:inline-block; padding:5px 13px; border-radius:5px;
+    font-family:var(--mono); font-size:12.5px; font-weight:700;
+    letter-spacing:1.2px; text-transform:uppercase; border:1px solid;
+  }
+  .b-allow  { color:var(--allow);  border-color:#3fb95055; background:#3fb95015; }
+  .b-cond   { color:var(--cond);   border-color:#d2992255; background:#d2992215; }
+  .b-deny   { color:var(--deny);   border-color:#f8514955; background:#f8514915; }
+  .b-review { color:var(--review); border-color:#a371f755; background:#a371f715; }
+  .b-answer { color:var(--answer); border-color:#58a6ff55; background:#58a6ff15; }
+
+  .verdict-head { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:12px; }
+  .rtype { font-family:var(--mono); font-size:11.5px; color:var(--faint); }
+  .reason { font-size:15px; line-height:1.6; margin:0 0 22px; }
+
+  section.block { margin-bottom:22px; }
+  section.block > h2 {
+    font-size:11px; text-transform:uppercase; letter-spacing:.9px;
+    color:var(--faint); margin:0 0 9px; font-weight:600;
+  }
+
+  .cond {
+    border:1px solid var(--line); border-left:3px solid var(--faint);
+    background:var(--panel); border-radius:0 6px 6px 0; padding:10px 12px; margin-bottom:8px;
+  }
+  .cond.ok   { border-left-color:var(--allow); }
+  .cond.bad  { border-left-color:var(--deny); }
+  .cond.unk  { border-left-color:var(--cond); }
+  .cond .top { display:flex; gap:8px; align-items:baseline; flex-wrap:wrap; }
+  .cond .mark { font-family:var(--mono); font-weight:700; font-size:13px; }
+  .cond.ok .mark  { color:var(--allow); }
+  .cond.bad .mark { color:var(--deny); }
+  .cond.unk .mark { color:var(--cond); }
+  .cond .desc { flex:1; min-width:200px; }
+  .cond .meta { font-family:var(--mono); font-size:11.5px; color:var(--faint); margin-top:5px; }
+  .cond .note { font-size:12px; color:var(--cond); margin-top:5px; }
+
+  .cite {
+    border:1px solid var(--line); background:var(--panel);
+    border-radius:6px; padding:11px 13px; margin-bottom:8px;
+  }
+  .cite .ref { font-family:var(--mono); font-size:12px; color:var(--answer); }
+  .cite .title { font-size:12.5px; color:var(--dim); margin-top:2px; }
+  .cite blockquote {
+    margin:8px 0 0; padding-left:11px; border-left:2px solid var(--line);
+    font-size:12.5px; color:var(--dim); line-height:1.55;
+  }
+
+  .stats { display:flex; gap:8px; flex-wrap:wrap; }
+  .stat {
+    background:var(--panel); border:1px solid var(--line); border-radius:6px;
+    padding:8px 12px; min-width:86px;
+  }
+  .stat b { display:block; font-family:var(--mono); font-size:17px; font-weight:600; }
+  .stat span { font-size:10.5px; text-transform:uppercase; letter-spacing:.6px; color:var(--faint); }
+  .stat.hero b { color:var(--answer); }
+
+  pre.know {
+    font-family:var(--mono); font-size:12px; white-space:pre-wrap; word-break:break-word;
+    background:var(--panel); border:1px solid var(--line); border-radius:6px;
+    padding:11px 13px; margin:0; color:var(--dim); line-height:1.6;
+  }
+  details.raw summary {
+    cursor:pointer; font-size:11px; text-transform:uppercase; letter-spacing:.8px;
+    color:var(--faint); outline:none;
+  }
+  details.raw pre {
+    font-family:var(--mono); font-size:11.5px; background:var(--panel);
+    border:1px solid var(--line); border-radius:6px; padding:12px;
+    overflow:auto; max-height:340px; color:var(--dim); margin:9px 0 0;
+  }
+  .err {
+    border:1px solid #f8514955; background:#f8514912; color:#ff9d95;
+    border-radius:6px; padding:12px 14px; font-size:13px;
+  }
+  .err code { font-family:var(--mono); font-size:12px; }
+  .spin { display:inline-block; width:13px; height:13px; vertical-align:-2px;
+          border:2px solid #ffffff55; border-top-color:#fff; border-radius:50%;
+          animation:sp .7s linear infinite; margin-right:7px; }
+  @keyframes sp { to { transform:rotate(360deg); } }
+  .waiting { color:var(--faint); font-size:12.5px; text-align:center; padding:36px 0; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>ERP Finance Policy Gate</h1>
+  <span class="sub">POST /api/policy/evaluate</span>
+  <span id="health">checking…</span>
+</header>
+
+<main>
+  <div class="left">
+    <div class="field">
+      <label for="role">Requester role</label>
+      <select id="role">
+        <option>finance_manager</option>
+        <option>finance_officer</option>
+        <option>accounts_officer</option>
+        <option>treasury_officer</option>
+        <option>financial_accountant</option>
+        <option>budget_controller</option>
+        <option>vendor_master_officer</option>
+        <option>line_manager</option>
+      </select>
+    </div>
+
+    <div class="row">
+      <div class="field">
+        <label for="dept">Department</label>
+        <input type="text" id="dept" value="FIN">
+      </div>
+      <div class="field">
+        <label for="amount">Amount (context)</label>
+        <input type="number" id="amount" placeholder="leave blank">
+      </div>
+    </div>
+
+    <div class="field">
+      <label for="owner">Did the requester raise / benefit from this document?</label>
+      <select id="owner">
+        <!-- Three states, not a checkbox. An unticked box is indistinguishable
+             from "not asked", and the gate treats those differently: unknown is
+             an unsatisfied condition, false is a passed check. Collapsing them
+             makes a clean allow unreachable. -->
+        <option value="unknown">Unknown — not checked (segregation stays open)</option>
+        <option value="false">No — someone else raised it</option>
+        <option value="true">Yes — self-approval</option>
+      </select>
+    </div>
+
+    <div class="field">
+      <label for="prompt">Request</label>
+      <textarea id="prompt" placeholder="pay invoice 8842"></textarea>
+    </div>
+
+    <button class="go" id="go">Evaluate</button>
+
+    <div class="presets">
+      <p>Example requests</p>
+      <button data-p='{"prompt":"release payment for invoice INV-8842","role":"finance_manager","amount":150000,"owner":"false"}'>
+        Permitted payment<i>in limit, right role, not the raiser — allow</i></button>
+      <button data-p='{"prompt":"just push this payment through for invoice INV-8842, it is urgent","role":"finance_manager","amount":1450000,"owner":"false"}'>
+        Urgent over-limit payment<i>casual phrasing, 1,450,000 — the recall case</i></button>
+      <button data-p='{"prompt":"pay invoice 8842","role":"finance_manager","amount":null,"owner":"false"}'>
+        Payment, amount unknown<i>unverifiable limit must not become a bare allow</i></button>
+      <button data-p='{"prompt":"approve invoice INV-9001","role":"finance_manager","amount":40000,"owner":"true"}'>
+        Self-approval<i>segregation of duties — hard denial</i></button>
+      <button data-p='{"prompt":"record a customer payment received from ABC Ltd","role":"finance_manager","amount":null}'>
+        Customer receipt<i>money IN — must be refused, not coerced</i></button>
+      <button data-p='{"prompt":"what is our limit for releasing a payment","role":"finance_officer","amount":null}'>
+        Policy question<i>answers, authorizes nothing</i></button>
+      <button data-p='{"prompt":"how much did we spend on travel last month","role":"finance_manager","amount":null}'>
+        Data request<i>no records held — refused, not routed</i></button>
+    </div>
+  </div>
+
+  <div class="right" id="out">
+    <div class="placeholder">Enter a request, or pick an example.</div>
+  </div>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c =>
+  ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;" }[c]));
+
+const BADGE = {
+  allow:                  ["b-allow",  "allow"],
+  allow_with_conditions:  ["b-cond",   "allow with conditions"],
+  deny:                   ["b-deny",   "deny"],
+  review:                 ["b-review", "review"],
+  answer:                 ["b-answer", "answer"],
+};
+
+// ── health ────────────────────────────────────────────────────────────────────
+fetch("/health").then(r => r.json()).then(h => {
+  $("health").innerHTML =
+    `<b>store</b> ${esc(h.policy_store)} · <b>chunks</b> ${h.policy_chunks}` +
+    ` · <b>judge</b> ${esc(h.judge_model)}`;
+}).catch(() => { $("health").textContent = "health unreachable"; });
+
+// ── presets ───────────────────────────────────────────────────────────────────
+document.querySelectorAll(".presets button").forEach(b => {
+  b.onclick = () => {
+    const p = JSON.parse(b.dataset.p);
+    $("prompt").value = p.prompt;
+    $("role").value   = p.role;
+    $("amount").value = p.amount ?? "";
+    $("owner").value  = p.owner ?? "unknown";
+    evaluate();
+  };
+});
+
+// ── submit ────────────────────────────────────────────────────────────────────
+$("go").onclick = evaluate;
+$("prompt").addEventListener("keydown", e => {
+  if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) evaluate();
+});
+
+async function evaluate() {
+  const prompt = $("prompt").value.trim();
+  if (!prompt) { $("prompt").focus(); return; }
+
+  const body = {
+    prompt,
+    actor: {
+      // A realistic id, not "U-DEMO". Measured on 2026-08-23: the identical
+      // request returned allow 5/5 as U-2001 and review 5/5 as U-DEMO, because
+      // the judge reads an identifier that looks like a test account as grounds
+      // to hedge. The id is not a policy input — role and segregation are
+      // settled deterministically before the judge sees anything — so this is
+      // spurious, and the demo should not be the thing that surfaces it.
+      user_id: "U-2001",
+      role: $("role").value,
+      department: $("dept").value.trim() || null,
+      // Omitted entirely when unknown. Absent means "we could not check", which
+      // the gate reports as an unsatisfied condition — never as a pass.
+      ...($("owner").value === "unknown"
+          ? {}
+          : { is_document_owner: $("owner").value === "true" }),
+    },
+    context: $("amount").value === "" ? {} : { amount: Number($("amount").value) },
+  };
+
+  $("go").disabled = true;
+  $("go").innerHTML = '<span class="spin"></span>Evaluating…';
+  $("out").innerHTML =
+    '<div class="waiting">Extracting intent, retrieving policy, judging…<br>' +
+    'A local model runs three passes; this usually takes a few seconds.</div>';
+
+  try {
+    const res  = await fetch("/api/policy/evaluate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const text = await res.text();
+    if (!res.ok) throw new Error(`HTTP ${res.status} — ${text.slice(0, 300)}`);
+    render(JSON.parse(text));
+  } catch (err) {
+    $("out").innerHTML =
+      `<div class="err"><b>Request failed.</b><br><code>${esc(err.message)}</code>
+       <br><br>Is the server running, and is Ollama up? It drops out often —
+       restart it and wait ~20s.</div>`;
+  } finally {
+    $("go").disabled = false;
+    $("go").textContent = "Evaluate";
+  }
+}
+
+// ── render ────────────────────────────────────────────────────────────────────
+function render(r) {
+  const [cls, label] = BADGE[r.decision] || ["b-review", r.decision];
+  const out = [];
+
+  out.push(`<div class="verdict-head">
+      <span class="badge ${cls}">${esc(label)}</span>
+      <span class="rtype">request_type: ${esc(r.request_type)}</span>
+    </div>
+    <p class="reason">${esc(r.reason)}</p>`);
+
+  if (r.action) {
+    out.push(`<section class="block"><h2>Proposed action</h2>
+      <pre class="know">${esc(r.action.name)}  (confidence: ${esc(r.action.confidence)})
+${esc(JSON.stringify(r.action.parameters, null, 2))}</pre></section>`);
+  }
+
+  if (r.conditions?.length) {
+    out.push(`<section class="block"><h2>Conditions</h2>` +
+      r.conditions.map(c => {
+        const state = c.satisfied === true ? "ok" : c.satisfied === false ? "bad" : "unk";
+        const mark  = c.satisfied === true ? "OK" : c.satisfied === false ? "X" : "?";
+        const cmp   = [c.field, c.operator, c.value, c.unit].filter(v => v != null && v !== "").join(" ");
+        return `<div class="cond ${state}">
+            <div class="top"><span class="mark">${mark}</span>
+              <span class="desc">${esc(c.description)}</span></div>
+            <div class="meta">${esc(c.type)}${cmp ? " · " + esc(cmp) : ""} · ${esc(c.source)}</div>
+            ${c.satisfied === null
+              ? '<div class="note">Not checkable with the facts supplied — never assumed true.</div>' : ""}
+            ${c.else_require?.length
+              ? `<div class="note">Otherwise requires: ${esc(c.else_require.join(", "))}</div>` : ""}
+          </div>`;
+      }).join("") + `</section>`);
+  }
+
+  if (r.citations?.length) {
+    out.push(`<section class="block"><h2>Authority</h2>` +
+      r.citations.map(c => `<div class="cite">
+          <div class="ref">${esc(c.policy_id)}@${esc(c.version)}${c.section ? "#" + esc(c.section) : ""}</div>
+          ${c.title ? `<div class="title">${esc(c.title)}</div>` : ""}
+          ${c.quote ? `<blockquote>${esc(c.quote)}</blockquote>` : ""}
+        </div>`).join("") + `</section>`);
+  }
+
+  if (r.knowledge) {
+    out.push(`<section class="block"><h2>Rules relied upon</h2>
+      <pre class="know">${esc(r.knowledge)}</pre></section>`);
+  }
+
+  const rt = r.retrieval || {};
+  out.push(`<section class="block"><h2>Retrieval</h2><div class="stats">
+      <div class="stat"><b>${rt.mandatory ?? 0}</b><span>mandatory</span></div>
+      <div class="stat hero"><b>${rt.action_filtered ?? 0}</b><span>by action</span></div>
+      <div class="stat"><b>${rt.semantic ?? 0}</b><span>semantic</span></div>
+      <div class="stat"><b>${rt.total_unique ?? 0}</b><span>unique</span></div>
+    </div></section>`);
+
+  out.push(`<details class="raw"><summary>Raw response</summary>
+      <pre>${esc(JSON.stringify(r, null, 2))}</pre></details>`);
+
+  $("out").innerHTML = out.join("");
+}
+</script>
+</body>
+</html>

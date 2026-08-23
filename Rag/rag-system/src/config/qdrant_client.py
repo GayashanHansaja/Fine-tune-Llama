@@ -10,4 +10,8 @@ from src.config.settings import settings
 @lru_cache(maxsize=1)
 def get_qdrant_client() -> QdrantClient:
     """Return a cached QdrantClient.  Called only by QdrantRetriever."""
-    return QdrantClient(url=settings.QDRANT_URL, api_key=settings.QDRANT_API_KEY)
+    return QdrantClient(
+        url=settings.QDRANT_URL,
+        api_key=settings.QDRANT_API_KEY,
+        timeout=settings.QDRANT_TIMEOUT,
+    )
