@@ -82,17 +82,31 @@ def _format_clauses(chunks: list[PolicyChunk]) -> str:
 
 
 class JudgeResult:
+    """
+    One ruling on the narrative clauses.
+
+    `read` records whether the clauses were actually evaluated. A judge that is
+    unreachable, returns unparseable output, or cites authority it was never
+    shown has not read them — the caller must deny, because nothing looked at
+    the rules that were not deterministically checked. A judge that replied
+    coherently *has* read them, and its verdict is an opinion the caller may
+    weigh. Both arrive here as a DENY, and treating them alike is how a model
+    too small to answer became indistinguishable from a policy refusal.
+    """
+
     def __init__(
         self,
         decision: PolicyDecision,
         reason: str,
         citations: list[Citation],
         model: str | None,
+        read: bool = True,
     ) -> None:
         self.decision = decision
         self.reason = reason
         self.citations = citations
         self.model = model
+        self.read = read
 
 
 def _resolve_citations(refs: list[str], chunks: list[PolicyChunk]) -> tuple[list[Citation], list[str]]:
@@ -151,6 +165,7 @@ async def judge(
             "governing rule cannot be authorized.",
             [],
             None,
+            read=False,
         )
 
     fallback = (
@@ -180,13 +195,18 @@ async def judge(
             f"be authorized without a policy decision.",
             [],
             settings.JUDGE_MODEL,
+            read=False,
         )
 
     match = _JSON_BLOCK.search(raw)
     if not match:
         logger.error(f"judge returned no JSON: {raw[:300]}")
         return JudgeResult(
-            fallback, "Policy judge returned an unreadable decision.", [], settings.JUDGE_MODEL
+            fallback,
+            "Policy judge returned an unreadable decision.",
+            [],
+            settings.JUDGE_MODEL,
+            read=False,
         )
 
     try:
@@ -194,7 +214,11 @@ async def judge(
     except json.JSONDecodeError:
         logger.error(f"judge returned malformed JSON: {raw[:300]}")
         return JudgeResult(
-            fallback, "Policy judge returned an unreadable decision.", [], settings.JUDGE_MODEL
+            fallback,
+            "Policy judge returned an unreadable decision.",
+            [],
+            settings.JUDGE_MODEL,
+            read=False,
         )
 
     raw_decision = str(data.get("decision", "")).lower().strip()
@@ -220,6 +244,7 @@ async def judge(
             f"the decision cannot be relied upon.",
             citations,
             settings.JUDGE_MODEL,
+            read=False,
         )
 
     if decision == PolicyDecision.ALLOW and not citations:
@@ -229,6 +254,7 @@ async def judge(
             "uncited authorization cannot be audited.",
             [],
             settings.JUDGE_MODEL,
+            read=False,
         )
 
     logger.info(f"judge → {decision.value} | cited {[c.ref for c in citations]}")

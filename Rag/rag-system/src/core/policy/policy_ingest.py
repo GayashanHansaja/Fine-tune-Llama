@@ -51,6 +51,27 @@ _CLAUSE_START = re.compile(
     re.MULTILINE | re.IGNORECASE,
 )
 
+# A clause that opens a new numbered section: "## 2. Segregation of duties".
+_SECTION_HEADING = re.compile(r"\A#{1,6}\s*(\d+(?:\.\d+)*)[.)]?\s+")
+
+# Any clause reference at the start of a line: "2.4 ...", "## 3. ...".
+_CLAUSE_REF = re.compile(r"^(?:#{1,6}\s*)?(\d+(?:\.\d+)*)[.)]?\s+", re.MULTILINE)
+
+
+def sections_in(chunk: str) -> set[str]:
+    """
+    Every clause reference the chunk contains, plus the sections they belong to.
+
+    "2.1" implies section "2", so a tag authored against §2 resolves whether the
+    document numbers its clauses or only its headings.
+    """
+    refs: set[str] = set()
+    for match in _CLAUSE_REF.finditer(chunk):
+        ref = match.group(1)
+        refs.add(ref)
+        refs.add(ref.split(".")[0])
+    return refs
+
 
 def parse_front_matter(text: str) -> tuple[PolicyMeta, str]:
     """
@@ -120,11 +141,19 @@ def pack_clauses(clauses: list[str], limit: int) -> list[str]:
     """
     Merge adjacent clauses up to `limit` so chunks aren't uselessly small,
     without ever letting a single clause straddle two chunks.
+
+    A numbered section heading always starts a new chunk, even when the previous
+    chunk has room. Merging across one produces a chunk whose recorded `section`
+    names only its first heading: §1+§2 merged is cited as "#1", so a denial
+    resting on §2 points the requester at §1 and quotes §1's text alongside it.
+    Packing tighter is not worth a citation that misdescribes itself.
     """
     chunks: list[str] = []
     current = ""
 
     for clause in clauses:
+        starts_section = bool(_SECTION_HEADING.match(clause))
+
         if len(clause) > limit:
             if current:
                 chunks.append(current)
@@ -133,7 +162,7 @@ def pack_clauses(clauses: list[str], limit: int) -> list[str]:
             continue
 
         candidate = f"{current}\n\n{clause}".strip() if current else clause
-        if len(candidate) > limit:
+        if current and (starts_section or len(candidate) > limit):
             chunks.append(current)
             current = clause
         else:
@@ -156,13 +185,41 @@ def build_policy_documents(text: str, source: str) -> list[LCDocument]:
     chunks = pack_clauses(split_clauses(body), settings.POLICY_CHUNK_SIZE)
 
     base_payload = meta.to_payload()
-    docs = [
-        LCDocument(
-            page_content=chunk,
-            metadata={**base_payload, "source": source, "chunk_index": i},
-        )
-        for i, chunk in enumerate(chunks)
+    wanted = meta.enforced_sections
+
+    docs = []
+    for i, chunk in enumerate(chunks):
+        present = sections_in(chunk)
+        # Narrow `enforces` to the chunk that actually states each check. A check
+        # authored without a section stays on every chunk — the caller told us
+        # the document is the authority and we do not guess a clause for it.
+        payload = {
+            **base_payload,
+            "enforces": [
+                check
+                for check, section in wanted.items()
+                if section is None or section in present
+            ],
+            "source": source,
+            "chunk_index": i,
+        }
+        docs.append(LCDocument(page_content=chunk, metadata=payload))
+
+    orphaned = [
+        check
+        for check, section in wanted.items()
+        if section is not None
+        and not any(section in sections_in(c) for c in chunks)
     ]
+    if orphaned:
+        # The tag names a clause this document does not contain — a typo, or a
+        # section that was renumbered. Silently it means the check has no
+        # authority at all and every denial it raises cites nothing.
+        logger.error(
+            f"policy '{meta.policy_id}': enforces tag(s) {orphaned} name a section "
+            f"that is not in the document — the check would be unattributable"
+        )
+
     logger.info(
         f"policy '{meta.policy_id}' v{meta.version} → {len(docs)} chunk(s) "
         f"| actions={meta.applies_to_actions} | mandatory={meta.mandatory}"
