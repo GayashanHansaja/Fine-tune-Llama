@@ -148,6 +148,23 @@ def validate(docs: list[LCDocument]) -> list[str]:
                     f"{pid}: governs no action and is not mandatory — unreachable by "
                     f"action-filtered retrieval"
                 )
+
+    # Every code-enforced check must land on exactly one chunk. Zero means a
+    # denial by that check can cite nothing; more than one means the engine picks
+    # by retrieval order again, which is the bug the section tag exists to fix.
+    tagged: dict[tuple[str, str], int] = {}
+    for doc in docs:
+        pid = doc.metadata.get("policy_id", "<none>")
+        for check in doc.metadata.get("enforces") or []:
+            tagged[(pid, check)] = tagged.get((pid, check), 0) + 1
+
+    for (pid, check), count in sorted(tagged.items()):
+        if count != 1:
+            problems.append(
+                f"{pid}: check '{check}' is tagged on {count} chunks — a denial by it "
+                f"would cite whichever chunk retrieval returned first; give the "
+                f"`enforces` entry the clause number that states the rule"
+            )
     return problems
 
 

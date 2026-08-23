@@ -226,26 +226,42 @@ async def _evaluate(request: EvaluateRequest) -> EvaluateResponse:
         established_facts=_facts(outcome.conditions),
     )
 
-    decision = verdict.decision
-
-    # The judge may only narrow. Where it allows but conditions remain unmet, the
-    # result is conditional — never a bare allow, because "we could not check the
-    # amount" and "the amount is within the limit" are different answers.
-    if decision == PolicyDecision.ALLOW and outcome.unmet:
-        decision = PolicyDecision.ALLOW_WITH_CONDITIONS
-
-    reason = verdict.reason
-    if decision == PolicyDecision.ALLOW_WITH_CONDITIONS and outcome.unmet:
-        reason = f"{reason} {len(outcome.unmet)} condition(s) must be satisfied before executing."
+    # ── 6. Combine ────────────────────────────────────────────────────────────
+    # The deterministic result decides; the judge annotates. It may escalate to
+    # review, never to deny.
+    #
+    # This was the other way round, and it did not survive contact with a small
+    # model. Measured on five requests that every check passed — in-limit
+    # amounts, correct roles, segregation resolved — four were denied by a judge
+    # returning a bare {"decision": "deny"} with no reason and no citation. The
+    # gate honoured it, because a deny with no citation is not rejected the way
+    # an uncited allow is. So the path of least effort for a struggling model was
+    # the one the gate trusted most, and the deterministic layer's correct answer
+    # was discarded on the strength of an empty JSON object.
+    #
+    # Escalation still works: a judge that reads a narrative clause and says so
+    # sends the request to a human. What it can no longer do is refuse a request
+    # that every stated rule permits, without saying which rule refused it.
+    decision, reason = _combine(verdict, outcome)
 
     citations = verdict.citations
-    if not citations and decision != PolicyDecision.ALLOW:
-        # A refusal has to say which rule refused. The judge sometimes names a
-        # policy in its prose without emitting it as a structured reference, which
-        # leaves the requester told "no" with nothing to look up and the audit
-        # trail with nothing to check. Fall back to the rules whose conditions did
-        # not pass — those are the grounds, whether or not the judge listed them.
-        citations = _citations_for_unmet(outcome, retrieved)
+    if not citations:
+        # Every verdict has to name the rules it rests on. A refusal that cites
+        # nothing leaves the requester told "no" with nothing to look up; an
+        # authorization that cites nothing cannot be audited later. The judge
+        # often names a policy in prose without emitting it as a structured
+        # reference, so fall back to the conditions the rule engine actually
+        # evaluated — unmet ones are the grounds for a refusal, satisfied ones
+        # are the authority for an allow.
+        # Failed checks first: when one exists it is the grounds for the refusal,
+        # and citing an unresolved condition instead would name a rule that did
+        # not refuse anything.
+        relevant = (
+            [c for c in outcome.conditions if c.satisfied is False]
+            or outcome.unmet
+            or [c for c in outcome.conditions if c.satisfied is True]
+        )
+        citations = _citations_for_conditions(relevant, retrieved)
 
     return EvaluateResponse(
         request_id=request_id,
@@ -263,6 +279,81 @@ async def _evaluate(request: EvaluateRequest) -> EvaluateResponse:
             policies_seen=retrieved.policy_refs,
         ),
     )
+
+
+def _combine(verdict, outcome) -> tuple[PolicyDecision, str]:
+    """
+    Deterministic outcome + judge annotation -> the decision returned.
+
+    Hard denials never reach here; they returned earlier with their own citation.
+    So what is left is a request no stated rule refused, and the question is only
+    whether every condition could actually be checked.
+
+        all conditions satisfied   -> allow
+        any condition unresolved   -> allow_with_conditions
+        judge says review          -> review, whatever the conditions say
+
+    A judge `deny` is downgraded to `review` rather than dropped: it read
+    something in the narrative clauses worth a second look, and a human should
+    see it — but "a model said no" is not itself a policy, and the requester is
+    owed the rule that refused them. Where the judge supplies a reason, it is
+    carried through; an empty verdict falls back to describing the conditions.
+    """
+    # `unmet` merges two different answers: a check that ran and FAILED
+    # (satisfied False) and a check that could not run at all (satisfied None).
+    # They must not produce the same verdict — the first is a breach, the second
+    # is a question for the caller. Separating them is only load-bearing now that
+    # the judge is advisory: while it could deny, an over-limit amount was caught
+    # downstream by the model, so treating both as "conditional" was survivable.
+    # It is not survivable any more, and 1,450,000 against a 1,000,000 limit
+    # came back allow_with_conditions until this split existed.
+    failed = [c for c in outcome.conditions if c.satisfied is False]
+    unresolved = [c for c in outcome.conditions if c.satisfied is None]
+    judge_reason = (verdict.reason or "").strip()
+    uninformative = not judge_reason or judge_reason.startswith("No reason supplied")
+
+    if not verdict.read:
+        # The narrative clauses were never evaluated — judge unreachable,
+        # unparseable, or citing authority it was not shown. Invariant 1 holds
+        # unchanged: nothing is authorized on rules nobody read.
+        return PolicyDecision.DENY, judge_reason
+
+    # An opinion escalates. An empty one is discarded.
+    #
+    # A judge that names a clause and says why has read something the rule engine
+    # could not check, and a human should see it. A bare {"decision": "deny"} —
+    # no reason, no citation — is not a finding about the policy; it is the
+    # cheapest token sequence the model could emit. Escalating on it sends every
+    # valid request to a human queue, which fails just as usefully as denying
+    # them did. So it changes nothing, and the deterministic result stands.
+    if failed:
+        # A stated rule was checked against a supplied fact and did not hold.
+        # That is a refusal on the policy's own terms, and it names the rule.
+        first = failed[0]
+        others = (
+            f" ({len(failed) - 1} further check(s) also failed.)"
+            if len(failed) > 1 else ""
+        )
+        return PolicyDecision.DENY, f"{first.description}.{others}"
+
+    objected = verdict.decision in (PolicyDecision.REVIEW, PolicyDecision.DENY)
+    if objected and not (uninformative and not verdict.citations):
+        return PolicyDecision.REVIEW, judge_reason
+
+    if unresolved:
+        base = judge_reason if not uninformative else (
+            "Every rule that could be checked against the facts supplied is satisfied."
+        )
+        return (
+            PolicyDecision.ALLOW_WITH_CONDITIONS,
+            f"{base} {len(unresolved)} condition(s) must be satisfied before executing.",
+        )
+
+    reason = judge_reason if not uninformative else (
+        "Permitted: every applicable rule was checked against the facts supplied "
+        "and each one is satisfied."
+    )
+    return PolicyDecision.ALLOW, reason
 
 
 def _facts(conditions: list[Condition]) -> list[str]:
@@ -283,28 +374,45 @@ def _facts(conditions: list[Condition]) -> list[str]:
 
 
 def _citations_for(source: str, retrieved: RetrievalResult):
-    """Build a citation for a deterministic denial from the chunk it came from."""
+    """
+    Build a citation for a deterministic denial from the chunk it came from.
+
+    Two passes, and the order is the point. A single pass accepting either an
+    exact clause match or a policy_id match returns whichever chunk of that
+    policy came first in retrieval order — so a segregation denial sourced to
+    FIN-GOV-2026-001@1.0#2 was cited as #3, "Evidence and authority", quoting
+    text about emailed instructions. The document-level fallback is for when the
+    exact clause was not retrieved; it must never pre-empt a clause that was.
+    """
     from src.types.policy import Citation
 
+    def _cite(chunk):
+        return [
+            Citation(
+                policy_id=chunk.meta.policy_id,
+                version=chunk.meta.version,
+                section=chunk.meta.section,
+                title=chunk.meta.title,
+                quote=chunk.text[:300],
+            )
+        ]
+
     for chunk in retrieved.chunks:
-        if chunk.meta.citation == source or chunk.meta.policy_id == source.split("@")[0]:
-            return [
-                Citation(
-                    policy_id=chunk.meta.policy_id,
-                    version=chunk.meta.version,
-                    section=chunk.meta.section,
-                    title=chunk.meta.title,
-                    quote=chunk.text[:300],
-                )
-            ]
+        if chunk.meta.citation == source:
+            return _cite(chunk)
+
+    for chunk in retrieved.chunks:
+        if chunk.meta.policy_id == source.split("@")[0]:
+            return _cite(chunk)
+
     return []
 
 
-def _citations_for_unmet(outcome, retrieved: RetrievalResult):
-    """Citations for every rule whose condition did not pass, in condition order."""
+def _citations_for_conditions(conditions: list[Condition], retrieved: RetrievalResult):
+    """Citations for the rules behind a set of conditions, in condition order."""
     citations = []
     seen: set[str] = set()
-    for condition in outcome.unmet:
+    for condition in conditions:
         if condition.source in seen or condition.source == "unattributed":
             continue
         seen.add(condition.source)

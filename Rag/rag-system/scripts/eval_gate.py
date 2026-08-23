@@ -126,6 +126,23 @@ async def gate_cases() -> None:
         any(c.policy_id == "FIN-GOV-2026-001" for c in self_approval.citations),
         f"cited: {[c.ref for c in self_approval.citations]}",
     )
+    # Citing the right document is not enough. This assertion only checked
+    # policy_id, and passed while the denial cited FIN-GOV-2026-001#3 "Evidence
+    # and authority" — a clause about emailed instructions, quoted at someone
+    # refused for self-approval. The clause has to be the one that states the
+    # rule, and the quote has to be the text they were refused under.
+    gov = [c for c in self_approval.citations if c.policy_id == "FIN-GOV-2026-001"]
+    check(
+        "4c. the citation names the segregation clause, not merely the policy",
+        any(c.section == "2" for c in gov),
+        f"sections cited: {[c.section for c in gov]}",
+    )
+    check(
+        "4d. the quoted text is the segregation rule itself",
+        any("segregation" in c.title.lower() or "may approve" in c.quote.lower()
+            for c in gov),
+        f"quotes: {[c.quote[:60] for c in gov]}",
+    )
 
     # 5. An unverifiable threshold must never become a bare allow.
     no_amount = await evaluate(
@@ -164,6 +181,53 @@ async def gate_cases() -> None:
             for c in over_limit.conditions
         ),
         f"conditions: {[(c.field, c.value, c.satisfied) for c in over_limit.conditions]}",
+    )
+    # 5d/5e assert the DECISION, not just the condition flag. 5c passed
+    # throughout a regression that returned allow_with_conditions for 1,450,000
+    # against a 1,000,000 limit: the condition was correctly marked False and the
+    # verdict ignored it, because "failed" and "could not be checked" were being
+    # collapsed into one bucket. A breach and an open question are not the same
+    # answer, and only the verdict shows which one the caller is given.
+    check(
+        "5d. a failed threshold check denies, it is not merely a condition",
+        over_limit.decision == PolicyDecision.DENY,
+        f"got {over_limit.decision.value}: {over_limit.reason[:80]}",
+    )
+
+    wrong_role = await evaluate(
+        EvaluateRequest(
+            prompt="release payment for invoice INV-8842",
+            actor=Actor(user_id="U-9", role="line_manager", department="OPS",
+                        is_document_owner=False),
+            context={"amount": 150000},
+        )
+    )
+    check(
+        "5e. an actor without an authorized role is denied",
+        wrong_role.decision == PolicyDecision.DENY,
+        f"got {wrong_role.decision.value}: {wrong_role.reason[:80]}",
+    )
+
+    # The happy path has to actually be reachable. A gate that never returns a
+    # plain allow is indistinguishable from one that is broken, and every
+    # assertion above would still pass.
+    permitted = await evaluate(
+        EvaluateRequest(
+            prompt="release payment for invoice INV-8842",
+            actor=Actor(user_id="U-2001", role="finance_manager", department="FIN",
+                        is_document_owner=False),
+            context={"amount": 150000},
+        )
+    )
+    check(
+        "5f. a fully compliant request is allowed outright",
+        permitted.decision == PolicyDecision.ALLOW,
+        f"got {permitted.decision.value}: {permitted.reason[:80]}",
+    )
+    check(
+        "5g. the allow names the rules it rests on",
+        len(permitted.citations) > 0,
+        f"citations: {[c.ref for c in permitted.citations]}",
     )
 
     # 7. Every citation must resolve to a policy that was actually retrieved.
@@ -310,6 +374,71 @@ async def gate_cases() -> None:
         "6. judge unreachable denies, never allows",
         judge_down.decision == PolicyDecision.DENY,
         f"got {judge_down.decision.value}: {judge_down.reason}",
+    )
+
+    # 6c. A judge that answered, but said nothing usable, is not the same failure.
+    # llama3.2:3b returns a bare {"decision": "deny"} — no reason, no citation —
+    # and that was denying requests every deterministic check had passed. An
+    # empty opinion may escalate to a human; it may not refuse on its own, or the
+    # cheapest output a struggling model can produce becomes the gate's verdict.
+    async def _judge_says_nothing(*_a, **_kw):
+        return judge_module.JudgeResult(
+            PolicyDecision.DENY, "No reason supplied by the judge.", [], "stub"
+        )
+
+    # 6e. A judge that *does* explain itself must still be able to escalate —
+    # the point is to discard noise, not to stop listening.
+    async def _judge_objects(*_a, **_kw):
+        from src.types.policy import Citation
+        return judge_module.JudgeResult(
+            PolicyDecision.DENY,
+            "Clause 5.2 requires treasury counter-signature for this vendor.",
+            [Citation(policy_id="FIN-PAY-2026-003", version="1.0", section="5",
+                      title="Payment release authorization", quote="...")],
+            "stub",
+        )
+
+    judge_module.judge = _judge_says_nothing
+    try:
+        empty_verdict = await evaluate(
+            EvaluateRequest(
+                prompt="release payment for invoice 8842",
+                actor=manager,
+                context={"amount": 250_000},
+            )
+        )
+    finally:
+        judge_module.judge = real_judge
+
+    check(
+        "6c. an uninformative judge verdict is discarded, not obeyed",
+        empty_verdict.decision in (
+            PolicyDecision.ALLOW, PolicyDecision.ALLOW_WITH_CONDITIONS
+        ),
+        f"got {empty_verdict.decision.value}: {empty_verdict.reason[:70]}",
+    )
+    check(
+        "6d. the deterministic checks that passed are still reported",
+        any(c.satisfied is True for c in empty_verdict.conditions),
+        f"conditions: {[(c.type.value, c.satisfied) for c in empty_verdict.conditions]}",
+    )
+
+    judge_module.judge = _judge_objects
+    try:
+        reasoned = await evaluate(
+            EvaluateRequest(
+                prompt="release payment for invoice 8842",
+                actor=manager,
+                context={"amount": 250_000},
+            )
+        )
+    finally:
+        judge_module.judge = real_judge
+
+    check(
+        "6e. a reasoned judge objection still escalates to review",
+        reasoned.decision == PolicyDecision.REVIEW,
+        f"got {reasoned.decision.value}: {reasoned.reason[:70]}",
     )
 
     retriever = get_policy_retriever()

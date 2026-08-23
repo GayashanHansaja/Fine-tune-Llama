@@ -9,11 +9,13 @@ version: "1.0"
 effective_date: "2026-01-01"
 is_current: true
 source_document: financial_governance_charter.pdf
-# This document is the authority for the segregation-of-duties check the rule
-# engine performs in code (§2). Tagged explicitly so a denial cites the clause
-# that actually states the rule, rather than whichever mandatory policy the
-# retriever happened to return first.
-enforces: [segregation_of_duties]
+# §2 is the authority for the segregation-of-duties check the rule engine
+# performs in code. Tagged with the clause number, not just the document: a bare
+# list is inherited by every chunk, so the engine cited whichever tagged chunk
+# retrieval returned first — which was §3, "Evidence and authority", quoting
+# text about emailed instructions at someone refused for self-approval.
+enforces:
+  segregation_of_duties: "2"
 ---
 
 ## 1. Standing of this policy

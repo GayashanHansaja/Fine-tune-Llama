@@ -82,7 +82,16 @@ class PolicyMeta(BaseModel):
     # retrieved clause a code-enforced denial should cite, and a denial citing
     # the wrong policy is worse than one citing none — it sends the requester to
     # a rule that does not say what they were told it says.
-    enforces: list[str] = Field(default_factory=list)
+    #
+    # Two accepted shapes, and the difference matters:
+    #   ["segregation_of_duties"]           the DOCUMENT is the authority
+    #   {"segregation_of_duties": "2"}      clause §2 is the authority
+    # A bare list is inherited by every chunk of the document, so the engine can
+    # only pick whichever tagged chunk retrieval returned first. That produced a
+    # segregation denial citing "§3 Evidence and authority" — the right policy,
+    # the wrong clause, quoting text about something else entirely. The mapping
+    # form is authored per clause and lands the tag on one chunk only.
+    enforces: list[str] | dict[str, str] = Field(default_factory=list)
 
     # Reject unknown keys: front-matter is built with **kwargs, and a misspelled
     # tag (`applies_to_tools` for `applies_to_actions`) would otherwise be dropped
@@ -98,6 +107,18 @@ class PolicyMeta(BaseModel):
     @property
     def has_structured_condition(self) -> bool:
         return self.threshold_value is not None or bool(self.requires_role)
+
+    @property
+    def enforced_checks(self) -> list[str]:
+        """The check names, whichever authoring shape `enforces` used."""
+        return list(self.enforces)          # dict iterates its keys
+
+    @property
+    def enforced_sections(self) -> dict[str, str | None]:
+        """check -> the clause that states it, or None when authored as a bare list."""
+        if isinstance(self.enforces, dict):
+            return {k: str(v) for k, v in self.enforces.items()}
+        return {check: None for check in self.enforces}
 
     def to_payload(self) -> dict[str, Any]:
         """
@@ -122,7 +143,10 @@ class PolicyMeta(BaseModel):
             "threshold_value": self.threshold_value,
             "threshold_unit": self.threshold_unit.value if self.threshold_unit else None,
             "requires_role": self.requires_role,
-            "enforces": self.enforces,
+            # Always a flat list on the wire, whatever shape the front-matter
+            # used. `build_policy_documents` narrows it per chunk; the published
+            # payload contract (§2.3) stays unchanged for the other team.
+            "enforces": self.enforced_checks,
         }
 
 
