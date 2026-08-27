@@ -98,6 +98,31 @@ class Settings(BaseSettings):
     # No tool-provider settings: this service returns a decision, it does not
     # execute. The caller holds the MCP/ERP credentials.
 
+    # ── Serving ──────────────────────────────────────────────────────────────
+    # Container platforms (Azure Container Apps, Railway, Cloud Run) inject the
+    # port to listen on. Hardcoding 8000 makes the container start and then be
+    # unreachable, which presents as a health-check failure with a healthy log.
+    PORT: int = 8000
+
+    # ── Inbound access control ───────────────────────────────────────────────
+    # See src/api/security.py. Comma-separated; empty disables the check, which
+    # is right for localhost and wrong for anything with a public address.
+    API_KEYS: str = ""
+    # Comma-separated allowed origins. "*" suits local development; narrow it to
+    # the calling application's origin once deployed.
+    CORS_ORIGINS: str = "*"
+    # The demo page holds a key in the browser in order to call the API, so it
+    # hands that key to anyone who can load the page. Off wherever that matters.
+    ENABLE_DEMO: bool = True
+
+    @property
+    def api_keys(self) -> set[str]:
+        return {k.strip() for k in self.API_KEYS.split(",") if k.strip()}
+
+    @property
+    def cors_origins(self) -> list[str]:
+        return [o.strip() for o in self.CORS_ORIGINS.split(",") if o.strip()] or ["*"]
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
 

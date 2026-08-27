@@ -300,9 +300,15 @@ async function evaluate() {
     'A local model runs three passes; this usually takes a few seconds.</div>';
 
   try {
+    // Substituted server-side from API_KEYS. Empty when the key check is off,
+    // in which case the header is simply omitted rather than sent blank.
+    const DEMO_KEY = "__DEMO_API_KEY__";
+    const headers = { "Content-Type": "application/json" };
+    if (DEMO_KEY && !DEMO_KEY.startsWith("__")) headers["X-API-Key"] = DEMO_KEY;
+
     const res  = await fetch("/api/policy/evaluate", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers,
       body: JSON.stringify(body),
     });
     const text = await res.text();

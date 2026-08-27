@@ -13,6 +13,7 @@ qdrant-client>=1.12.0
 # ── API layer ────────────────────────────────────────────────────────────────
 fastapi>=0.115.0
 uvicorn[standard]>=0.32.0
+mcp>=2.1.0                       # MCP server mounted at /mcp (tool: check_policy)
 
 # ── Config / validation ──────────────────────────────────────────────────────
 pydantic>=2.9.0
