@@ -23,6 +23,7 @@ import logging
 import re
 
 from src.core.actions.action_registry import ActionSpec, action_names, all_actions, get_action
+from src.core.common.schema_validate import validate_against_schema
 from src.core.llm.llm_service import get_llm
 
 logger = logging.getLogger(__name__)
@@ -182,50 +183,11 @@ def validate_parameters(spec: ActionSpec, params: dict) -> list[str]:
     """
     Check extracted parameters against the action's JSON Schema.
 
-    Deliberately a small hand-rolled subset (required / oneOf / type /
-    additionalProperties) rather than a schema library: these are the constraints
-    the registry actually uses, and a failure here must be a clear message the
-    caller can act on, not a nested validator trace.
+    Thin wrapper over the shared validator in `src.core.common.schema_validate`,
+    which /api/assist also uses to validate a planner's tool-call arguments
+    against a caller-supplied tool spec.
     """
-    problems: list[str] = []
-    schema = spec.params_schema
-    properties: dict = schema.get("properties", {})
-
-    for key in params:
-        if key not in properties and schema.get("additionalProperties") is False:
-            problems.append(f"unknown parameter '{key}'")
-
-    for key in schema.get("required", []):
-        if key not in params or params[key] in (None, ""):
-            problems.append(f"missing required parameter '{key}'")
-
-    one_of = schema.get("oneOf")
-    if one_of:
-        matched = [
-            branch for branch in one_of
-            if all(r in params and params[r] not in (None, "") for r in branch.get("required", []))
-        ]
-        if len(matched) != 1:
-            options = " or ".join(
-                "+".join(b.get("required", [])) for b in one_of
-            )
-            problems.append(
-                f"exactly one of ({options}) must be supplied, got {len(matched)}"
-            )
-
-    for key, value in params.items():
-        expected = properties.get(key, {}).get("type")
-        if expected == "number" and isinstance(value, str):
-            # The model often returns "1450000" for a number field; accept it if
-            # it is unambiguously numeric, reject anything needing interpretation.
-            try:
-                params[key] = float(value.replace(",", ""))
-            except ValueError:
-                problems.append(f"parameter '{key}' must be a number, got {value!r}")
-        elif expected == "string" and not isinstance(value, str):
-            params[key] = str(value)
-
-    return problems
+    return validate_against_schema(spec.params_schema, params)
 
 
 async def _confirm(prompt: str, spec: ActionSpec) -> tuple[bool, str]:

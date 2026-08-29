@@ -43,6 +43,8 @@ Both services must be up; there is no offline mode by design.
 
 ```
 python -m scripts.eval_gate           # 33 golden cases  <- the main check
+python -m scripts.eval_assist         # /api/assist golden cases
+python -m scripts.eval_assist --structural-only   # no LLM needed
 python -m scripts.coverage_report     # scenario gaps in the corpus
 python -m scripts.query_policies release_payment "just push this through"
 python -m scripts.verify_policy_chunking      # no services needed
@@ -63,9 +65,21 @@ POST /api/policy/evaluate  {prompt, actor, context}
     4 rule_engine        thresholds / roles / segregation -> conditions
     5 judge              LLM reads remaining narrative clauses, must cite
     6 verdict            allow | allow_with_conditions | deny | review | answer
+
+POST /api/assist  {prompt, actor, context, system_prompt, tools[], history[]}
+  assist_routes -> assist_controller -> assist_gate.assist()   -- read-only, executes nothing
+    1 kind filter        drop every tool not marked kind:"read" (missing kind = write = dropped)
+    2 refusal_classifier LLM: is this action-shaped? refuse, point at /api/policy/evaluate
+    3 tool_planner       LLM: one JSON call -> needs_tools | final | refused
+    4 actor-scope        user_id/department/cost_center in a call's arguments are
+                          overwritten from `actor`, never left to the model or the prompt
 ```
 
 Steps 1–2 never touch Qdrant. Step 4 never touches the LLM.
+
+`/api/assist` implements `docs/ASSIST_CONTRACT.md`, minus its §6 masking/redaction
+(deny-listed fields, minimum aggregate group size) — deliberately descoped for
+this research build, see "Known — real, not yet fixed" below.
 
 **The rule engine decides; the judge annotates.** `_combine()` in `policy_gate.py`:
 
@@ -109,6 +123,12 @@ judge failed" from "the judge had nothing to say"; only the first denies.
 | `src/core/actions/action_registry.py` | the published action vocabulary (v0.2.0) |
 | `src/types/policy.py`, `src/types/gateway.py` | domain + API models |
 | `docs/POLICY_PAYLOAD_CONTRACT.md` | what to send the data-transport team |
+| `src/core/assist/assist_gate.py` | `/api/assist` orchestrator; mirrors `policy_gate.py`'s shape |
+| `src/core/assist/refusal_classifier.py` | safety net: refuses action-shaped prompts, fails closed |
+| `src/core/assist/tool_planner.py` | one structured LLM call -> needs_tools \| final \| refused |
+| `src/core/common/schema_validate.py` | JSON-Schema-subset validator shared by actions and tool specs |
+| `src/types/assist.py` | `/api/assist` domain + API models |
+| `docs/ASSIST_CONTRACT.md` | the `/api/assist` spec (v1 ships without §6 masking) |
 
 ## Invariants — do not break these
 
@@ -215,12 +235,28 @@ real payload dump — kept as evidence of their schema; do not delete.
   was stable in all five, which is the argument for the deterministic layer: the
   variance is confined to the annotation. Still worth stating in the writeup
   rather than claiming reproducibility the system does not have.
+- **`/api/assist` ships without result masking.** `docs/ASSIST_CONTRACT.md` §6
+  specifies stripping deny-listed fields (bank account numbers, tax ids, salary
+  figures, national ids) and suppressing small-count aggregates before a tool
+  result ever reaches the planner. None of that is implemented — tool results
+  reach the planner exactly as the caller's tool returned them. Descoped
+  deliberately for this research build (not production), but real: a tool that
+  returns an unmasked account number will have that number read and possibly
+  echoed back in `answer`.
+- **`/api/assist`'s `answer` is grounded by id, not by content.** The gate
+  checks every id in `used` resolves to a real `ok: true` result somewhere in
+  `history` — it cannot check that every *number* in `answer`'s prose actually
+  traces back to that result correctly, only that something real was shown.
+  Same category of limitation as the judge's citation checking.
 
 ## Open — undecided, nothing blocked
 
 - Judge model: bump to `llama3.1:8b`?
-- Payroll / disclosure requests: out of scope, or build a governed read pipeline
-  (read whitelist, scope injection, field masking, minimum group size)?
+- Payroll / disclosure requests: still out of scope for `/api/policy/evaluate`.
+  `/api/assist` is now the governed read pipeline this bullet used to ask
+  about — read whitelist (`kind:"read"` filter) and scope injection
+  (actor-scoped argument overwrite) are built; field masking and minimum
+  group size are not (see "Known — real, not yet fixed").
 - Registry expansion — receivables is the largest hole. Deliberately deferred:
   breadth, not evidence.
 - Fine-tuning: required research contribution, or not?

@@ -95,6 +95,17 @@ class Settings(BaseSettings):
     JUDGE_MODEL: str = "llama3.1:8b"         # deliberately larger than LLM_MODEL
     POLICY_FAIL_CLOSED: bool = True          # judge error/timeout ⇒ DENY, never allow
 
+    # ── Assist (read-tool planner) ──────────────────────────────────────────
+    # Independent from LLM_MODEL the same way JUDGE_MODEL is, so tool-selection
+    # accuracy can be tuned separately once real tool shapes exist. Empty means
+    # "use LLM_MODEL" — a fresh .env with no ASSIST_MODEL still starts correctly,
+    # unlike JUDGE_MODEL, which hardcodes its own default independently.
+    ASSIST_MODEL: str = ""
+
+    @property
+    def assist_model(self) -> str:
+        return self.ASSIST_MODEL.strip() or self.LLM_MODEL
+
     # No tool-provider settings: this service returns a decision, it does not
     # execute. The caller holds the MCP/ERP credentials.
 

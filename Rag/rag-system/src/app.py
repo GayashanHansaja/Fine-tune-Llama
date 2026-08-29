@@ -19,6 +19,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from mcp.server.transport_security import TransportSecuritySettings
 
 from src.api.mcp_server import mcp
+from src.api.routes.assist_routes import router as assist_router
 from src.api.routes.policy_routes import router as policy_router
 from src.api.security import key_is_valid, require_api_key
 from src.config.settings import settings
@@ -105,9 +106,12 @@ app = FastAPI(
         "→ judge → verdict`\n\n"
         "This service does not execute anything. `POST /api/policy/evaluate` "
         "returns a decision, the proposed action, the clauses it rests on, and "
-        "any conditions the caller must satisfy first."
+        "any conditions the caller must satisfy first. `POST /api/assist` is its "
+        "read-only sibling: it plans which of the caller's own read-only tools "
+        "to call, or answers from results already shown to it — see "
+        "docs/ASSIST_CONTRACT.md."
     ),
-    version="2.0.0",
+    version="2.1.0",
     lifespan=lifespan,
     docs_url="/docs",
     redoc_url="/redoc",
@@ -124,6 +128,7 @@ app.add_middleware(
 # health probe does not need a credential, and it deliberately exposes no policy
 # data — only whether the store and the model backend are reachable.
 app.include_router(policy_router, dependencies=[Depends(require_api_key)])
+app.include_router(assist_router, dependencies=[Depends(require_api_key)])
 
 
 # ── MCP surface ───────────────────────────────────────────────────────────────
