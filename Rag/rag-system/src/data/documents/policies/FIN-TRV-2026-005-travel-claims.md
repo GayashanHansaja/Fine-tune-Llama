@@ -9,9 +9,14 @@ version: "1.0"
 effective_date: "2026-01-01"
 is_current: true
 source_document: travel_claim_policy.pdf
+# Backed, but only partly: expense_claims and expense_claim_lines are real ERP
+# documents. A travel permit is not — no such table exists — so clause 2.1 can
+# never be verified from a record and comes back satisfied: null rather than as
+# a pass. That is the correct outcome, not a gap to paper over: an unverifiable
+# control is a condition on the approval, not a check that succeeded.
 threshold_value: 14
 threshold_unit: days
-requires_role: [line_manager, finance_officer]
+requires_role: [department_manager, finance_editor]
 ---
 
 ## 1. Scope

@@ -33,7 +33,7 @@ This policy governs the approval of supplier invoices and purchase orders.
 
 ## 2. Approval authority
 
-2.1 Invoices of up to 2,500,000 may be approved by any Finance Officer without
+2.1 Invoices of up to 2,500,000 may be approved by any Finance Editor without
 further reference.
 
 2.2 Invoices exceeding 2,500,000 require approval by the Finance Manager.

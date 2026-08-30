@@ -9,9 +9,13 @@ version: "1.0"
 effective_date: "2026-01-01"
 is_current: true
 source_document: budget_control_manual.pdf
+# No budgets, budget_lines or cost_centres table exists anywhere in the ERP
+# migrations, so nothing here is checkable against a record today. Kept for the
+# same reason as FIN-VND-2026-004: the rule is meant to exist before the table.
+erp_backed: false
 threshold_value: 10
 threshold_unit: percent
-requires_role: [budget_controller]
+requires_role: [finance_manager]
 ---
 
 ## 1. Scope
@@ -22,10 +26,10 @@ lines, and expense categories within a financial year.
 ## 2. Transfer limits
 
 2.1 A transfer of up to 10% of the annual approved budget of the releasing cost
-centre may be authorized by the Budget Controller.
+centre may be authorized by a Finance Manager.
 
 2.2 A transfer exceeding 10% of the annual approved budget of the releasing cost
-centre requires approval from the Chief Financial Officer.
+centre requires approval from a System Administrator.
 
 2.3 The cumulative value of transfers out of a single cost centre within a financial
 year is subject to the same limits. Successive transfers must not be used to move
@@ -35,7 +39,7 @@ more than 10% in aggregate under clause 2.1.
 
 3.1 Budget must not be transferred from a capital expenditure line to an operating
 expenditure line, nor from a personnel cost line to any other line, without the
-approval of the Chief Financial Officer.
+approval of a System Administrator.
 
 3.2 Budget must not be transferred into a cost centre in order to accommodate a
 spend that has already been incurred. A transfer that regularises a completed

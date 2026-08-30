@@ -9,7 +9,11 @@ version: "1.0"
 effective_date: "2026-01-01"
 is_current: true
 source_document: general_ledger_manual.pdf
-requires_role: [financial_accountant, finance_manager]
+# Mixed backing, so `erp_backed` stays true for the document as a whole: journal
+# entries are a real ERP document (`journal_entries`, docstatus 0 -> 1), credit
+# notes are not — there is no credit note table anywhere in the migrations. §4
+# therefore governs an action the ERP cannot currently perform. Kept deliberately.
+requires_role: [finance_editor, finance_manager]
 ---
 
 ## 1. Scope
@@ -24,7 +28,8 @@ being recorded. A narration consisting only of an adjustment reference, a person
 name, or the word "correction" is not sufficient.
 
 2.2 A manual journal entry must be reviewed and released by a person other than the
-person who prepared it.
+person who prepared it. The preparer is the identity recorded against the entry when
+it was created; submitting an entry under that same identity is not a review.
 
 2.3 Manual entries to cash, bank, revenue, and suspense accounts require Finance
 Manager approval regardless of value.

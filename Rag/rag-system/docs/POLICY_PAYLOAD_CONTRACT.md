@@ -58,10 +58,32 @@ surface them as structured fields, we compare them in code:
 | Field | Type | Example |
 |---|---|---|
 | `risk_level` | enum: `low`/`medium`/`high`/`critical` | `high` |
-| `threshold_value` | number | `1000000` |
+| `threshold_value` | number | `100000` |
 | `threshold_unit` | enum: `percent`/`absolute`/`days` | `absolute` |
-| `requires_role` | array of string | `["finance_manager", "treasury_officer"]` |
+| `requires_role` | array of string | `["finance_manager", "admin"]` |
 | `enforces` | array of string | `["segregation_of_duties"]` |
+
+**Units: an `absolute` threshold is major currency units — LKR, not cents.**
+This is not a stylistic choice, it is the one that breaks silently. The ERP holds
+transaction values in *minor* units (`total_minor`, `paid_amount_minor`,
+`outstanding_minor`), while its own authorization data holds them in major units
+(`approval_rules.minimum_amount`, `approval_requests.amount`, both `REAL`). A
+caller that reads `total_minor` off a purchase invoice and forwards it unconverted
+inflates every amount by 100: a 14,500 invoice arrives as 1,450,000, breaches the
+dual-authorization limit, and is denied with a citation that reads perfectly
+correct. Nothing in the response would look wrong. Convert before you send, and
+send `context.amount` in major units.
+
+**Roles must be strings from the ERP's `roles` table** — currently `admin`,
+`finance_manager`, `finance_editor`, `hr_manager`, `inventory_manager`,
+`inv_editor`, `procurement_manager`, `department_manager`, `employee`.
+`requires_role` is compared against `actor.role` verbatim, so a role named in a
+policy but absent from that table is a check that can never pass, and one spelled
+differently is a check that never fires. Note also that `user_roles` is
+many-to-many: a single identity can hold both `finance_manager` and
+`finance_editor`, while `actor.role` carries one string. Whoever authenticates the
+caller decides which role a request is made under, and that decision is part of
+the security boundary — it is not ours to infer.
 
 `enforces` names the code-enforced checks a clause is the **authority** for. Some rules
 we evaluate in Python rather than by reading text — segregation of duties is the current

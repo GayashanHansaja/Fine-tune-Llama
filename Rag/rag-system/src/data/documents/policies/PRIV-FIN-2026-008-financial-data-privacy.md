@@ -28,8 +28,8 @@ involved in it.
 
 ## 2. Permitted access
 
-2.1 Ledger and payment data may be accessed by holders of a Finance Officer,
-Financial Accountant, or Finance Manager role for a purpose connected with their
+2.1 Ledger and payment data may be accessed by holders of a Finance Editor or
+Finance Manager role for a purpose connected with their
 duties. The purpose must be recorded with the access.
 
 2.2 An employee may view their own expense claims and reimbursements without further
