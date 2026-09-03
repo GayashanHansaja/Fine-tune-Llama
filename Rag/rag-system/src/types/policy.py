@@ -93,6 +93,21 @@ class PolicyMeta(BaseModel):
     # form is authored per clause and lands the tag on one chunk only.
     enforces: list[str] | dict[str, str] = Field(default_factory=list)
 
+    # False when the ERP schema has no table behind the action this policy
+    # governs — checked against nmdra/mockerp's migrations on 2026-08-30, mirrored
+    # in fixtures/erp_schema/. Two documents are wholly in that position:
+    # FIN-BUD-2026-007 (no budgets table exists) and FIN-VND-2026-004 (`suppliers`
+    # carries no bank columns). Credit notes are equally unbacked but have no
+    # document of their own — they are a section inside FIN-GL-2026-006 and
+    # FIN-DUP-2026-009, both of which govern backed actions too, so the flag would
+    # be wrong either way there; the front-matter comment carries it instead.
+    #
+    # All are kept deliberately (the gate is not limited to what is built yet),
+    # but the distinction has to live in the payload rather than in a comment:
+    # "this rule governs nothing the ERP can currently do" is exactly the kind of
+    # thing that is forgotten between writing the corpus and defending it.
+    erp_backed: bool = True
+
     # Reject unknown keys: front-matter is built with **kwargs, and a misspelled
     # tag (`applies_to_tools` for `applies_to_actions`) would otherwise be dropped
     # silently — leaving a policy that never matches anything, with no error.

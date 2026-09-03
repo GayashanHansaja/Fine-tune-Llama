@@ -103,7 +103,7 @@ def retrieval_cases() -> None:
 
 
 async def gate_cases() -> None:
-    officer = Actor(user_id="U-1180", role="accounts_officer", department="FIN")
+    officer = Actor(user_id="U-1180", role="finance_editor", department="FIN")
     manager = Actor(user_id="U-2001", role="finance_manager", department="FIN")
 
     # 4. The person who raised the document may not approve it.
@@ -197,7 +197,7 @@ async def gate_cases() -> None:
     wrong_role = await evaluate(
         EvaluateRequest(
             prompt="release payment for invoice INV-8842",
-            actor=Actor(user_id="U-9", role="line_manager", department="OPS",
+            actor=Actor(user_id="U-9", role="inventory_manager", department="OPS",
                         is_document_owner=False),
             context={"amount": 150000},
         )

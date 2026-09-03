@@ -98,3 +98,15 @@ def get_judge_llm() -> BaseChatModel:
     LLM_MODEL, and temperature is pinned to 0.
     """
     return _chat_model(settings.JUDGE_MODEL, temperature=0.0, max_tokens=768)
+
+
+@lru_cache(maxsize=1)
+def get_assist_llm() -> BaseChatModel:
+    """
+    The read-tool planner model for /api/assist.
+
+    Temperature 0, same rationale as the judge: a plan or grounded answer that
+    varies between two identical calls is not something a caller can build a
+    reliable agent loop against.
+    """
+    return _chat_model(settings.assist_model, temperature=0.0, max_tokens=1024)

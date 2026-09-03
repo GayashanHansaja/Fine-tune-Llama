@@ -1,8 +1,41 @@
-# Assist Contract — v0.1 (DRAFT, for review)
+# Assist Contract — v0.1 (IMPLEMENTED, with the deviations noted below)
 
 **Audience:** the developer building the agent loop / MCP client
 **Author:** AI decision module
-**Status:** proposal — field names are negotiable, the *capabilities* are not
+**Status:** implemented at `POST /api/assist` — see §10 for exactly where this
+build departs from the draft below.
+
+---
+
+## 10. v1 implementation notes
+
+The endpoint described in §§1–9 is live. Three deliberate deviations from the
+draft, decided during implementation:
+
+1. **No masking (§6).** Deny-listed field stripping and minimum-aggregate-size
+   suppression are **not implemented**. Tool results reach the planner exactly
+   as the caller's tool returned them. Descoped for this research build (not
+   production) — recorded in `CLAUDE.md`'s "Known — real, not yet fixed".
+   Revisit once real tool shapes exist, per the open question in §8.3 this
+   answers: masking design genuinely does depend on knowing whether tools
+   return structured JSON or free text.
+2. **`id` and `order` are assigned by the module, not the model.** The planner
+   is only asked for `name` + `arguments` per `tool_calls[]` entry; the gate
+   assigns `id` (`tc_N`, numbered continuing from however many calls already
+   exist in `history`, so ids stay unique across the whole conversation) and
+   `order` (position in the reply) itself. Removes a failure class — duplicate
+   or malformed model-invented ids — the contract's original request/response
+   examples didn't need to account for.
+3. **An extra refusal classifier runs before planning.** Not in the original
+   draft. One additional LLM call classifies the prompt as `action`-shaped or
+   `read`-shaped before any tool planning happens; an action-shaped prompt is
+   refused immediately with a reason pointing at `POST /api/policy/evaluate`,
+   on top of (not instead of) the structural `kind` filter §3.1 already
+   describes. **Fails closed** — a classifier failure refuses rather than
+   falling through to planning, unlike `intent_extractor.py`'s confirmation
+   pass on the policy-gate side, which fails open because a deterministic gate
+   downstream re-checks everything it protects. This classifier has no such
+   backstop, so an outage here has to refuse, not guess "probably read-only."
 
 ---
 

@@ -43,6 +43,8 @@ Both services must be up; there is no offline mode by design.
 
 ```
 python -m scripts.eval_gate           # 33 golden cases  <- the main check
+python -m scripts.eval_assist         # /api/assist golden cases
+python -m scripts.eval_assist --structural-only   # no LLM needed
 python -m scripts.coverage_report     # scenario gaps in the corpus
 python -m scripts.query_policies release_payment "just push this through"
 python -m scripts.verify_policy_chunking      # no services needed
@@ -63,9 +65,21 @@ POST /api/policy/evaluate  {prompt, actor, context}
     4 rule_engine        thresholds / roles / segregation -> conditions
     5 judge              LLM reads remaining narrative clauses, must cite
     6 verdict            allow | allow_with_conditions | deny | review | answer
+
+POST /api/assist  {prompt, actor, context, system_prompt, tools[], history[]}
+  assist_routes -> assist_controller -> assist_gate.assist()   -- read-only, executes nothing
+    1 kind filter        drop every tool not marked kind:"read" (missing kind = write = dropped)
+    2 refusal_classifier LLM: is this action-shaped? refuse, point at /api/policy/evaluate
+    3 tool_planner       LLM: one JSON call -> needs_tools | final | refused
+    4 actor-scope        user_id/department/cost_center in a call's arguments are
+                          overwritten from `actor`, never left to the model or the prompt
 ```
 
 Steps 1–2 never touch Qdrant. Step 4 never touches the LLM.
+
+`/api/assist` implements `docs/ASSIST_CONTRACT.md`, minus its §6 masking/redaction
+(deny-listed fields, minimum aggregate group size) — deliberately descoped for
+this research build, see "Known — real, not yet fixed" below.
 
 **The rule engine decides; the judge annotates.** `_combine()` in `policy_gate.py`:
 
@@ -109,6 +123,12 @@ judge failed" from "the judge had nothing to say"; only the first denies.
 | `src/core/actions/action_registry.py` | the published action vocabulary (v0.2.0) |
 | `src/types/policy.py`, `src/types/gateway.py` | domain + API models |
 | `docs/POLICY_PAYLOAD_CONTRACT.md` | what to send the data-transport team |
+| `src/core/assist/assist_gate.py` | `/api/assist` orchestrator; mirrors `policy_gate.py`'s shape |
+| `src/core/assist/refusal_classifier.py` | safety net: refuses action-shaped prompts, fails closed |
+| `src/core/assist/tool_planner.py` | one structured LLM call -> needs_tools \| final \| refused |
+| `src/core/common/schema_validate.py` | JSON-Schema-subset validator shared by actions and tool specs |
+| `src/types/assist.py` | `/api/assist` domain + API models |
+| `docs/ASSIST_CONTRACT.md` | the `/api/assist` spec (v1 ships without §6 masking) |
 
 ## Invariants — do not break these
 
@@ -152,7 +172,8 @@ judge failed" from "the judge had nothing to say"; only the first denies.
     gate reports as "judge unavailable" and denies. Observed on Nemotron at 768.
 - **Tests:** 42/42 golden cases pass. Coverage: no gaps, 10 actions × 10 dimensions.
 - **Demo UI** at `GET /demo` (`src/static/demo.html`) — role/amount controls, a
-  three-state segregation selector, seven preset cases, renders verdict +
+  three-state segregation selector, nine preset cases (the two purchase-order
+  cases are the headline: 100,000 is the ERP's own limit), renders verdict +
   conditions + citations. Served from the app so it shares an origin with the
   API. The segregation control is a *select*, not a checkbox: an unticked box is
   indistinguishable from "not asked", and unknown (condition) and false (passed
@@ -160,17 +181,45 @@ judge failed" from "the judge had nothing to say"; only the first denies.
 - **Registry v0.2.0** — 10 finance actions. The 0.1.x HR vocabulary is gone.
 - Working tree clean; everything committed.
 
-### Corpus (synthetic — this matters)
+### Corpus — synthetic rules, real vocabulary (2026-08-30)
 
-11 policy documents in `src/data/documents/policies/`. **These were written as
-scaffolding, not findings.** Every threshold (1,000,000 for dual authorization,
-etc.) is invented. Same for the 10 coverage dimensions — a judgement call about
-what a finance decision turns on, not drawn from COSO/ISO or any control
-framework. Checking them against a real framework would strengthen the research.
+11 policy documents in `src/data/documents/policies/`. **The rules were written as
+scaffolding, not findings**, but the vocabulary they are written in is now the
+ERP's own, taken from `nmdra/mockerp`'s migrations (mirrored in
+`fixtures/erp_schema/`). Three things changed and the distinction matters when
+defending this:
+
+- **Roles are the ERP's `roles` table** — `admin`, `finance_manager`,
+  `finance_editor`, `hr_manager`, `inventory_manager`, `inv_editor`,
+  `procurement_manager`, `department_manager`, `employee`. The previous corpus
+  named eight roles of which exactly one (`finance_manager`) existed; the other
+  seven were `requires_role` clauses that could never match anything, because the
+  comparison against `actor.role` is verbatim.
+- **`FIN-AP-2026-002`'s 100,000 is not invented.** It is
+  `approval_rules('Purchase Order', sequence_no 2, role 'admin', minimum_amount
+  100000)` from their seed. It is the only threshold in the corpus with a source;
+  every other one (1,000,000 for dual authorization, etc.) is still authored, and
+  `FIN-PAY-2026-003` says so in its front-matter because `approval_rules` has no
+  Payment Entry row.
+- **Amounts are major LKR.** The ERP holds transaction values in minor units
+  (`total_minor`) and its authorization data in major (`approval_rules.
+  minimum_amount`, `REAL`). A caller forwarding `total_minor` unconverted inflates
+  every amount 100×, and the denial that follows looks entirely correct. Stated in
+  `docs/POLICY_PAYLOAD_CONTRACT.md` §2.3.
+
+The 10 coverage dimensions are still a judgement call, not drawn from COSO/ISO.
+
+`erp_backed: false` marks a policy governing an action no ERP table supports:
+`FIN-BUD-2026-007` (no budgets table) and `FIN-VND-2026-004` (`suppliers` has no
+bank columns). Credit notes are equally unbacked but live inside two documents
+that also govern backed actions, so those carry a front-matter comment instead.
+All kept deliberately — the rule existing before the table is the safer order.
 
 `FIN-AP-2023-011` is deliberately superseded with laxer limits, so a missing
 `is_current` filter fails visibly. `fixtures/qdrant_policies/` is the other team's
 real payload dump — kept as evidence of their schema; do not delete.
+`fixtures/erp_schema/` is five of `nmdra/mockerp`'s migrations, kept for the same
+reason: the corpus now depends on their column names.
 
 ## Bugs found and fixed — do not reintroduce
 
@@ -215,13 +264,31 @@ real payload dump — kept as evidence of their schema; do not delete.
   was stable in all five, which is the argument for the deterministic layer: the
   variance is confined to the annotation. Still worth stating in the writeup
   rather than claiming reproducibility the system does not have.
+- **`/api/assist` ships without result masking.** `docs/ASSIST_CONTRACT.md` §6
+  specifies stripping deny-listed fields (bank account numbers, tax ids, salary
+  figures, national ids) and suppressing small-count aggregates before a tool
+  result ever reaches the planner. None of that is implemented — tool results
+  reach the planner exactly as the caller's tool returned them. Descoped
+  deliberately for this research build (not production), but real: a tool that
+  returns an unmasked account number will have that number read and possibly
+  echoed back in `answer`.
+- **`/api/assist`'s `answer` is grounded by id, not by content.** The gate
+  checks every id in `used` resolves to a real `ok: true` result somewhere in
+  `history` — it cannot check that every *number* in `answer`'s prose actually
+  traces back to that result correctly, only that something real was shown.
+  Same category of limitation as the judge's citation checking.
 
 ## Open — undecided, nothing blocked
 
 - Judge model: bump to `llama3.1:8b`?
-- Payroll / disclosure requests: out of scope, or build a governed read pipeline
-  (read whitelist, scope injection, field masking, minimum group size)?
-- Registry expansion — receivables is the largest hole. Deliberately deferred:
+- Payroll / disclosure requests: still out of scope for `/api/policy/evaluate`.
+  `/api/assist` is now the governed read pipeline this bullet used to ask
+  about — read whitelist (`kind:"read"` filter) and scope injection
+  (actor-scoped argument overwrite) are built; field masking and minimum
+  group size are not (see "Known — real, not yet fixed").
+- Registry expansion — receivables is the largest hole, and the ERP does have
+  `sales_orders`, `sales_invoices` and `delivery_notes`, so it is buildable now.
+  Deliberately deferred:
   breadth, not evidence.
 - Fine-tuning: required research contribution, or not?
 - Conditional thresholds ("above 500,000 *when cross-border*") cannot be expressed

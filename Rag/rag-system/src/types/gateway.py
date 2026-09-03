@@ -44,6 +44,9 @@ class Actor(BaseModel):
     user_id: str = Field(..., min_length=1)
     role: str = Field(..., min_length=1, description="Authenticated role, e.g. finance_officer")
     department: str | None = None
+    # Additive for /api/assist's actor-scoped tool-argument overwrite (see
+    # docs/ASSIST_CONTRACT.md §3.4) — unused by /api/policy/evaluate today.
+    cost_center: str | None = None
     # Set when the actor is also the raiser/beneficiary of the target document.
     # The caller knows this; we cannot look it up. Used for segregation of duties.
     is_document_owner: bool | None = None

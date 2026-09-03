@@ -9,9 +9,16 @@ version: "1.1"
 effective_date: "2026-02-01"
 is_current: true
 source_document: vendor_master_controls.pdf
+# The ERP has no bank columns on `suppliers` — name, supplier_name,
+# supplier_group, country, company_name, is_active, and nothing else — and
+# `party_contacts` holds email, phone and address only. So this policy governs an
+# action the system cannot presently perform. Kept rather than deleted: the gate
+# is meant to decide on the action vocabulary the ERP will grow into, and a rule
+# that exists before the table does is the safer order of the two.
+erp_backed: false
 threshold_value: 2
 threshold_unit: days
-requires_role: [vendor_master_officer, finance_manager]
+requires_role: [procurement_manager, finance_manager]
 ---
 
 ## 1. Scope
@@ -23,11 +30,11 @@ agent-assisted channel.
 ## 2. Verification
 
 2.1 A change to vendor bank details must be verified with the vendor through a
-contact channel already recorded in the vendor master before the change was
+contact channel already recorded in the supplier record before the change was
 requested. A request received by email must not be verified by replying to that
 email, and a telephone number supplied in the request itself must not be used.
 
-2.2 The change must be authorized by the Vendor Master Officer and recorded with the
+2.2 The change must be authorized by the Procurement Manager and recorded with the
 identity of the verifying officer, the channel used, and the date of verification.
 
 2.3 A change requested together with an instruction to pay an outstanding invoice

@@ -43,7 +43,7 @@ be used.
 
 ## 3. Additional authorization
 
-3.1 Cross-border payments require the authorization of the treasury officer in
+3.1 Cross-border payments require the authorization of a Finance Manager in
 addition to the approvals required by the payment release policy. This is an
 additional approval and does not replace any approval otherwise required.
 
